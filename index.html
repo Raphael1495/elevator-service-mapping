@@ -218,8 +218,8 @@ kakao.maps.load(function () {
   renderDistrictBoundaries("./data/seoul_gu_boundary.json", "#2563EB");
   kakao.maps.event.addListener(map, "zoom_changed", updateDistrictStrokeWeights);
 
-  // minLevel 5 = 실측 기준 가로 폭 약 3.19km부터 클러스터링 시작 (레벨 4=1.6km까지는 개별 마커)
-  var clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 5 });
+  // minLevel 6 = 실측 기준 가로 폭 약 6.38km부터 클러스터링 시작 (레벨 5=3.19km까지는 개별 마커)
+  var clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 6 });
   // 카카오 InfoWindow는 내용 길이에 따라 박스 높이를 잘못 계산해 잘리는 경우가 있어
   // 대신 CustomOverlay + 직접 스타일링한 div로 내용 길이에 맞춰 자동으로 커지게 처리
   var overlay = new kakao.maps.CustomOverlay({ yAnchor: 1.15, zIndex: 2 });
