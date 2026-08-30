@@ -299,6 +299,33 @@ kakao.maps.load(function () {
 
   function buildFilterChips(containerId, activeMap) {
     var container = document.getElementById(containerId);
+    var groupInputs = [];
+
+    var allLabel = document.createElement("label");
+    allLabel.className = "chip active";
+    var allInput = document.createElement("input");
+    allInput.type = "checkbox";
+    allInput.checked = true;
+    allLabel.appendChild(allInput);
+    allLabel.appendChild(document.createTextNode("전체"));
+    container.appendChild(allLabel);
+
+    function syncAllChip() {
+      var allOn = groupInputs.every(function (input) { return input.checked; });
+      allInput.checked = allOn;
+      allLabel.classList.toggle("active", allOn);
+    }
+
+    allInput.addEventListener("change", function () {
+      groupInputs.forEach(function (input, i) {
+        input.checked = allInput.checked;
+        activeMap[COMPANY_GROUPS[i]] = allInput.checked;
+        input.parentElement.classList.toggle("active", allInput.checked);
+      });
+      allLabel.classList.toggle("active", allInput.checked);
+      refresh();
+    });
+
     COMPANY_GROUPS.forEach(function (group) {
       var label = document.createElement("label");
       label.className = "chip active";
@@ -308,11 +335,13 @@ kakao.maps.load(function () {
       input.addEventListener("change", function () {
         activeMap[group] = input.checked;
         label.classList.toggle("active", input.checked);
+        syncAllChip();
         refresh();
       });
       label.appendChild(input);
       label.appendChild(document.createTextNode(group));
       container.appendChild(label);
+      groupInputs.push(input);
     });
   }
   buildFilterChips("manufacturer-filters", activeManufacturer);
@@ -570,39 +599,90 @@ kakao.maps.load(function () {
     updateDashboard(visible);
   }
 
+  // 검색은 지도에 지금 로드된 지역과 무관하게 전체에서 찾을 수 있어야 하지만,
+  // 그러자고 항상 전체 데이터를 들고 있으면 지도 성능 최적화가 무의미해지므로,
+  // 검색 전용 경량 색인(id/현장명/프로젝트번호/지역만 있는 작은 파일)을 따로 두고
+  // 실제로 검색을 시도할 때 딱 한 번만 불러온다 (평소 지도 탐색 속도엔 영향 없음).
+  var searchIndex = null;
+  var searchIndexPromise = null;
+
+  function loadSearchIndex() {
+    if (!searchIndexPromise) {
+      searchIndexPromise = loadData("./data/search_index.json").catch(function () { return []; });
+      searchIndexPromise.then(function (data) { searchIndex = data; });
+    }
+    return searchIndexPromise;
+  }
+
+  function matchObjects(pool, digits, qLower) {
+    var match = [];
+    if (digits.length === 7) match = pool.filter(function (item) { return String(item.id) === digits; });
+    else if (digits.length === 6) match = pool.filter(function (item) { return String(item.projectNo) === digits; });
+    if (match.length === 0) match = pool.filter(function (item) { return item.name && item.name.toLowerCase().indexOf(qLower) !== -1; });
+    return match;
+  }
+
+  // 색인 항목은 [id, name, projectNo, region] 배열 형태
+  function matchIndexEntries(index, digits, qLower) {
+    var match = [];
+    if (digits.length === 7) match = index.filter(function (e) { return e[0] === digits; });
+    else if (digits.length === 6) match = index.filter(function (e) { return String(e[2]) === digits; });
+    if (match.length === 0) match = index.filter(function (e) { return e[1] && e[1].toLowerCase().indexOf(qLower) !== -1; });
+    return match;
+  }
+
+  function goToMatch(target, matchCount) {
+    document.getElementById("search-status").textContent = "검색 결과 " + matchCount.toLocaleString() + "건 (첫 번째로 이동)";
+    var pos = new kakao.maps.LatLng(target.lat, target.lng);
+    map.setLevel(3);
+    map.panTo(pos);
+    // 이동/확대가 끝나면 idle이 발생하면서 handleViewChange가 먼저 실행되어
+    // 해당 지역 마커를 그려주므로, 그 다음에 정보창을 열어준다.
+    kakao.maps.event.addListener(map, "idle", function onceIdle() {
+      kakao.maps.event.removeListener(map, "idle", onceIdle);
+      var marker = markersById[target.id];
+      if (marker) openInfoWindow(marker, target);
+    });
+  }
+
   function doSearch() {
     var q = document.getElementById("search-input").value.trim();
     var statusEl = document.getElementById("search-status");
     if (!q) { refresh(); return; }
 
-    // 검색은 화면 범위와 상관없이 지금까지 불러온 지역 전체에서 찾는다
-    var pool = getFiltered(getAllLoadedItems());
     var digits = q.replace(/[^0-9]/g, "");
-    var match = null;
+    var qLower = q.toLowerCase();
 
-    if (digits.length === 7) {
-      match = pool.filter(function (item) { return String(item.id) === digits; });
-    } else if (digits.length === 6) {
-      match = pool.filter(function (item) { return String(item.projectNo) === digits; });
-    }
-    if (!match || match.length === 0) {
-      var qLower = q.toLowerCase();
-      match = pool.filter(function (item) { return item.name && item.name.toLowerCase().indexOf(qLower) !== -1; });
-    }
-
-    if (match.length === 0) {
-      statusEl.textContent = "검색 결과 없음: " + q;
+    // 1) 이미 불러온 지역 데이터 안에서 먼저 찾아본다 (네트워크 요청 없이 즉시)
+    var localMatch = matchObjects(getFiltered(getAllLoadedItems()), digits, qLower);
+    if (localMatch.length > 0) {
+      goToMatch(localMatch[0], localMatch.length);
       return;
     }
 
-    statusEl.textContent = "검색 결과 " + match.length.toLocaleString() + "건 (첫 번째로 이동)";
-    var target = match[0];
-    var pos = new kakao.maps.LatLng(target.lat, target.lng);
-    map.setLevel(3);
-    map.panTo(pos);
-
-    var marker = currentMarkers.filter(function (m) { return m.__item.id === target.id; })[0];
-    if (marker) openInfoWindow(marker, target);
+    // 2) 없으면 검색 색인을 불러와서(최초 1회) 전체 범위에서 찾는다
+    statusEl.textContent = "검색 중...";
+    loadSearchIndex().then(function (index) {
+      var idxMatch = matchIndexEntries(index, digits, qLower);
+      if (idxMatch.length === 0) {
+        statusEl.textContent = "검색 결과 없음: " + q;
+        return;
+      }
+      var region = idxMatch[0][3];
+      var ensure = regionData[region]
+        ? Promise.resolve()
+        : loadData("./data/" + (regionsManifest[region] ? regionsManifest[region].file : ""))
+            .then(function (items) { regionData[region] = attachGroups(items); })
+            .catch(function () {});
+      ensure.then(function () {
+        var full = (regionData[region] || []).filter(function (item) { return item.id === idxMatch[0][0]; })[0];
+        if (!full) {
+          statusEl.textContent = "검색 결과 없음: " + q;
+          return;
+        }
+        goToMatch(full, idxMatch.length);
+      });
+    });
   }
 
   document.getElementById("search-btn").addEventListener("click", doSearch);
@@ -722,6 +802,7 @@ kakao.maps.load(function () {
       regionsManifest = manifest;
       handleViewChange();
       kakao.maps.event.addListener(map, "idle", handleViewChange);
+      loadSearchIndex(); // 지도 렌더링과 무관하게 백그라운드에서 미리 받아둠 (검색 시 대기시간 단축)
     })
     .catch(function () {
       document.getElementById("search-status").textContent = "실데이터 없음 - 샘플 데이터로 표시";

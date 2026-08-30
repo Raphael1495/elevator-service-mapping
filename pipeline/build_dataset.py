@@ -29,6 +29,7 @@ MGMT_SOURCE = os.path.join(BASE_DIR, "2026.07월 관리대수(원본).xlsb")
 MGMT_SHEET = "download"
 REGIONS_DIR = os.path.join(BASE_DIR, "data", "regions")
 MANIFEST_FILE = os.path.join(BASE_DIR, "data", "regions_manifest.json")
+SEARCH_INDEX_FILE = os.path.join(BASE_DIR, "data", "search_index.json")
 
 NEEDED_COLUMNS = [
     "ELEVATORNO",
@@ -229,7 +230,17 @@ def main():
     with open(MANIFEST_FILE, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False)
 
+    # 지도 데이터(지역 파일)는 화면에 걸치는 지역만 불러오지만, 검색은 지금 화면과
+    # 무관하게 전체에서 찾을 수 있어야 하므로 훨씬 가벼운 검색 전용 색인을 따로 만든다.
+    # (좌표/주소/제조업체 등은 빼고 검색에 필요한 필드만 배열로 - 용량을 최소화)
+    search_index = [
+        [r["id"], r["name"], r["projectNo"], region_of(r["address"])] for r in records
+    ]
+    with open(SEARCH_INDEX_FILE, "w", encoding="utf-8") as f:
+        json.dump(search_index, f, ensure_ascii=False)
+
     print(f"완료: {len(records)}건 -> {len(by_region)}개 지역 파일 + {MANIFEST_FILE}")
+    print(f"검색 색인: {len(search_index)}건 -> {SEARCH_INDEX_FILE}")
     for region, info in sorted(manifest.items(), key=lambda x: -x[1]["count"]):
         print(f"  {region}: {info['count']}건")
     print(f"주소 매핑 없음(스킵): {skipped_no_addr}건")
