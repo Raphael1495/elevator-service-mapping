@@ -340,29 +340,51 @@ kakao.maps.load(function () {
   }
 
   var openMarker = null;
+  var markersById = {}; // 화면에 이미 떠 있는 마커 - 매번 전체를 지웠다 새로 만들면 느려서 바뀐 것만 갱신
 
-  function renderMarkers(data) {
-    clusterer.clear();
-    var markers = data.map(function (item) {
-      var position = new kakao.maps.LatLng(item.lat, item.lng);
-      var marker = new kakao.maps.Marker({
-        position: position,
-        image: getMarkerImage(classifyCompany(item.mntCompany)),
-      });
-      marker.__item = item;
-
-      kakao.maps.event.addListener(marker, "click", function () {
-        if (openMarker === marker) {
-          closeInfoWindow();
-        } else {
-          openInfoWindow(marker, item);
-        }
-      });
-
-      return marker;
+  function makeMarker(item) {
+    var marker = new kakao.maps.Marker({
+      position: new kakao.maps.LatLng(item.lat, item.lng),
+      image: getMarkerImage(item._mntGroup),
     });
-    clusterer.addMarkers(markers);
-    return markers;
+    marker.__item = item;
+    kakao.maps.event.addListener(marker, "click", function () {
+      if (openMarker === marker) {
+        closeInfoWindow();
+      } else {
+        openInfoWindow(marker, item);
+      }
+    });
+    return marker;
+  }
+
+  // data(현재 화면에 있어야 할 항목들)와 이미 떠 있는 마커를 비교해서,
+  // 새로 들어온 것만 추가하고 화면에서 벗어난 것만 제거한다 (전체 재생성 없음).
+  function renderMarkers(data) {
+    var nextIds = {};
+    var toAdd = [];
+
+    data.forEach(function (item) {
+      nextIds[item.id] = true;
+      if (!markersById[item.id]) {
+        var marker = makeMarker(item);
+        markersById[item.id] = marker;
+        toAdd.push(marker);
+      }
+    });
+
+    var toRemove = [];
+    Object.keys(markersById).forEach(function (id) {
+      if (!nextIds[id]) {
+        toRemove.push(markersById[id]);
+        delete markersById[id];
+      }
+    });
+
+    if (toRemove.length) clusterer.removeMarkers(toRemove);
+    if (toAdd.length) clusterer.addMarkers(toAdd);
+
+    return Object.keys(markersById).map(function (id) { return markersById[id]; });
   }
 
   function openInfoWindow(marker, item) {
@@ -521,6 +543,7 @@ kakao.maps.load(function () {
 
   function clearDetailMarkers() {
     clusterer.clear();
+    markersById = {};
     currentMarkers = [];
   }
 
