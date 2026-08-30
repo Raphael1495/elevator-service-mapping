@@ -169,6 +169,7 @@ kakao.maps.load(function () {
     center: new kakao.maps.LatLng(36.35, 127.8),
     level: 13,
   });
+  window.__debugMap = map; // 콘솔에서 __debugMap.getLevel() 로 현재 레벨 확인용
 
   // 카카오맵이 기본 제공하는 지도/스카이뷰 전환 버튼 (커스텀 스타일링은 API에서 지원 안 함)
   map.addControl(new kakao.maps.MapTypeControl(), kakao.maps.ControlPosition.TOPRIGHT);
