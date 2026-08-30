@@ -258,7 +258,10 @@ kakao.maps.load(function () {
     closeInfoWindow();
   });
 
-  var allData = [];
+  // 지역별로 따로 보관 (하나의 큰 배열로 합치면, 세션 동안 들렀던 지역이 쌓일수록
+  // 화면 갱신할 때마다 그 전체를 다 훑어야 해서 갈수록 느려짐 -> 지금 화면과 겹치는
+  // 지역의 데이터만 골라서 보는 방식으로 비용을 "누적 총량"이 아니라 "현재 화면"에 묶어둠)
+  var regionData = {};
   var activeManufacturer = {};
   var activeMntCompany = {};
   COMPANY_GROUPS.forEach(function (g) {
@@ -288,15 +291,44 @@ kakao.maps.load(function () {
   buildFilterChips("mntcompany-filters", activeMntCompany);
   renderLegend();
 
-  function getFiltered() {
-    return allData.filter(function (item) {
-      return activeManufacturer[classifyCompany(item.manufacturer)] &&
-             activeMntCompany[classifyCompany(item.mntCompany)];
+  // 업체 그룹 분류(문자열 검색 여러 번)를 매번 다시 하지 않도록, 지역 데이터가
+  // 들어올 때 딱 한 번만 계산해서 항목에 붙여둔다.
+  function attachGroups(items) {
+    items.forEach(function (item) {
+      item._mfgGroup = classifyCompany(item.manufacturer);
+      item._mntGroup = classifyCompany(item.mntCompany);
+    });
+    return items;
+  }
+
+  function getAllLoadedItems() {
+    return Object.keys(regionData).reduce(function (acc, region) {
+      return acc.concat(regionData[region]);
+    }, []);
+  }
+
+  // 지금까지 세션에서 들른 지역 전체가 아니라, 화면과 겹치는 지역의 데이터만 후보로
+  // 삼는다 (예: 서울 보다가 수원으로 이동하면 서울 데이터는 더 이상 훑지 않음).
+  function getCandidateItems() {
+    if (!regionsManifest) return getAllLoadedItems();
+    var bounds = map.getBounds();
+    var sw = bounds.getSouthWest();
+    var ne = bounds.getNorthEast();
+    var items = [];
+    Object.keys(regionData).forEach(function (region) {
+      var info = regionsManifest[region];
+      if (info && !boundsOverlap(info, sw, ne)) return;
+      items = items.concat(regionData[region]);
+    });
+    return items;
+  }
+
+  function getFiltered(items) {
+    return items.filter(function (item) {
+      return activeManufacturer[item._mfgGroup] && activeMntCompany[item._mntGroup];
     });
   }
 
-  // 확대된 상태(상세 모드)에서도 지금까지 불러온 지역이 쌓일수록 allData 전체를
-  // 다시 렌더링하면 느려지므로, 실제 화면(bounds)에 들어오는 것만 마커로 만든다.
   function getVisible(filtered) {
     var bounds = map.getBounds();
     var sw = bounds.getSouthWest();
@@ -369,7 +401,7 @@ kakao.maps.load(function () {
     var counts = {};
     COMPANY_GROUPS.forEach(function (g) { counts[g] = 0; });
     data.forEach(function (item) {
-      counts[classifyCompany(item.mntCompany)]++;
+      counts[item._mntGroup]++;
     });
     var table = document.getElementById("dashboard-table");
     table.innerHTML = "";
@@ -388,7 +420,7 @@ kakao.maps.load(function () {
 
   function refresh() {
     closeInfoWindow();
-    var visible = getVisible(getFiltered());
+    var visible = getVisible(getFiltered(getCandidateItems()));
     currentMarkers = renderMarkers(visible);
     updateDashboard(visible);
     document.getElementById("search-status").textContent = "표시된 승강기: " + visible.length.toLocaleString() + "건";
@@ -399,7 +431,8 @@ kakao.maps.load(function () {
     var statusEl = document.getElementById("search-status");
     if (!q) { refresh(); return; }
 
-    var pool = getFiltered();
+    // 검색은 화면 범위와 상관없이 지금까지 불러온 지역 전체에서 찾는다
+    var pool = getFiltered(getAllLoadedItems());
     var digits = q.replace(/[^0-9]/g, "");
     var match = null;
 
@@ -516,7 +549,7 @@ kakao.maps.load(function () {
         return loadData("./data/" + regionsManifest[region].file).catch(function () { return []; });
       })
     ).then(function (results) {
-      results.forEach(function (items) { allData = allData.concat(items); });
+      results.forEach(function (items, i) { regionData[toLoad[i]] = attachGroups(items); });
       refresh();
     });
   }
@@ -547,7 +580,7 @@ kakao.maps.load(function () {
     .catch(function () {
       document.getElementById("search-status").textContent = "실데이터 없음 - 샘플 데이터로 표시";
       return loadData("./data/elevators.sample.json").then(function (data) {
-        allData = data;
+        regionData["sample"] = attachGroups(data);
         detailModeActive = true;
         refresh();
       });
