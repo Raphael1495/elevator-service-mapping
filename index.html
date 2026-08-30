@@ -66,6 +66,12 @@
   #legend { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
   #legend .legend-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #555; margin-bottom: 3px; }
   #legend .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  .region-summary-badge {
+    background: rgba(37,99,235,0.85); color: #fff; font-size: 12px; font-weight: bold;
+    padding: 5px 9px; border-radius: 14px; border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3); white-space: nowrap;
+  }
 </style>
 </head>
 <body>
@@ -267,6 +273,18 @@ kakao.maps.load(function () {
     });
   }
 
+  // 확대된 상태(상세 모드)에서도 지금까지 불러온 지역이 쌓일수록 allData 전체를
+  // 다시 렌더링하면 느려지므로, 실제 화면(bounds)에 들어오는 것만 마커로 만든다.
+  function getVisible(filtered) {
+    var bounds = map.getBounds();
+    var sw = bounds.getSouthWest();
+    var ne = bounds.getNorthEast();
+    return filtered.filter(function (item) {
+      return item.lat >= sw.getLat() && item.lat <= ne.getLat() &&
+             item.lng >= sw.getLng() && item.lng <= ne.getLng();
+    });
+  }
+
   var openMarker = null;
 
   function renderMarkers(data) {
@@ -348,10 +366,10 @@ kakao.maps.load(function () {
 
   function refresh() {
     closeInfoWindow();
-    var filtered = getFiltered();
-    currentMarkers = renderMarkers(filtered);
-    updateDashboard(filtered);
-    document.getElementById("search-status").textContent = "표시된 승강기: " + filtered.length.toLocaleString() + "건";
+    var visible = getVisible(getFiltered());
+    currentMarkers = renderMarkers(visible);
+    updateDashboard(visible);
+    document.getElementById("search-status").textContent = "표시된 승강기: " + visible.length.toLocaleString() + "건";
   }
 
   function doSearch() {
@@ -400,14 +418,55 @@ kakao.maps.load(function () {
     });
   }
 
-  // 전국 데이터를 지역(시/도)별 파일로 나눠뒀기 때문에, 지금 지도 화면에 걸치는
+  // 전국 데이터를 지역(시/군/구)별 파일로 나눠뒀기 때문에, 지금 지도 화면에 걸치는
   // 지역 파일만 불러온다 (regions_manifest.json 에 지역별 위경도 범위가 있음).
+  //
+  // 많이 축소된 상태(전국/광역 보기)에서 실제 마커를 다 만들면 수십만 개를 한 번에
+  // 생성하게 되어 매우 느려지므로, 그 상태에서는 지역별 "건수 배지"만 가볍게 보여주고
+  // 일정 레벨 이상 확대했을 때만 실제 마커 데이터를 불러와서 표시한다.
+  var DETAIL_ZOOM_LEVEL = 8; // 레벨 8 이하로 확대해야 개별 마커 모드로 전환
   var regionsManifest = null;
   var loadedRegions = {};
+  var summaryOverlays = [];
+  var detailModeActive = false;
 
   function boundsOverlap(info, sw, ne) {
     return !(info.maxLat < sw.getLat() || info.minLat > ne.getLat() ||
              info.maxLng < sw.getLng() || info.minLng > ne.getLng());
+  }
+
+  function clearSummaryOverlays() {
+    summaryOverlays.forEach(function (o) { o.setMap(null); });
+    summaryOverlays = [];
+  }
+
+  function renderSummaryOverlays() {
+    if (!regionsManifest) return;
+    var bounds = map.getBounds();
+    var sw = bounds.getSouthWest();
+    var ne = bounds.getNorthEast();
+    clearSummaryOverlays();
+    Object.keys(regionsManifest).forEach(function (region) {
+      var info = regionsManifest[region];
+      if (!boundsOverlap(info, sw, ne)) return;
+      var el = document.createElement("div");
+      el.className = "region-summary-badge";
+      el.textContent = region + " " + info.count.toLocaleString();
+      var overlay = new kakao.maps.CustomOverlay({
+        position: new kakao.maps.LatLng((info.minLat + info.maxLat) / 2, (info.minLng + info.maxLng) / 2),
+        content: el,
+        yAnchor: 0.5,
+        xAnchor: 0.5,
+      });
+      overlay.setMap(map);
+      summaryOverlays.push(overlay);
+    });
+    document.getElementById("search-status").textContent = "레벨 " + DETAIL_ZOOM_LEVEL + " 이하로 확대하면 개별 승강기가 표시됩니다.";
+  }
+
+  function clearDetailMarkers() {
+    clusterer.clear();
+    currentMarkers = [];
   }
 
   function loadRegionsInView() {
@@ -424,7 +483,10 @@ kakao.maps.load(function () {
         toLoad.push(region);
       }
     });
-    if (toLoad.length === 0) return;
+    if (toLoad.length === 0) {
+      refresh();
+      return;
+    }
 
     document.getElementById("search-status").textContent = "지역 데이터 불러오는 중... (" + toLoad.join(", ") + ")";
     Promise.all(
@@ -437,16 +499,34 @@ kakao.maps.load(function () {
     });
   }
 
+  function handleViewChange() {
+    var level = map.getLevel();
+    if (level >= DETAIL_ZOOM_LEVEL) {
+      if (detailModeActive) {
+        clearDetailMarkers();
+        detailModeActive = false;
+      }
+      renderSummaryOverlays();
+    } else {
+      if (!detailModeActive) {
+        clearSummaryOverlays();
+        detailModeActive = true;
+      }
+      loadRegionsInView();
+    }
+  }
+
   loadData("./data/regions_manifest.json")
     .then(function (manifest) {
       regionsManifest = manifest;
-      loadRegionsInView();
-      kakao.maps.event.addListener(map, "idle", loadRegionsInView);
+      handleViewChange();
+      kakao.maps.event.addListener(map, "idle", handleViewChange);
     })
     .catch(function () {
       document.getElementById("search-status").textContent = "실데이터 없음 - 샘플 데이터로 표시";
       return loadData("./data/elevators.sample.json").then(function (data) {
         allData = data;
+        detailModeActive = true;
         refresh();
       });
     })
