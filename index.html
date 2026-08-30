@@ -105,7 +105,7 @@ kakao.maps.load(function () {
   function classifyCompany(name) {
     if (!name) return "기타";
     var n = String(name).toUpperCase();
-    if (n.indexOf("오티스") !== -1 || n.indexOf("OTIS") !== -1) return "오티스";
+    if (n.indexOf("오티스") !== -1 || n.indexOf("OTIS") !== -1 || n.indexOf("엘지산전") !== -1 || n.indexOf("LG산전") !== -1) return "오티스";
     if (n.indexOf("현대") !== -1) return "현대";
     if (n.indexOf("티센") !== -1 || n.indexOf("티케이") !== -1 || n.indexOf("THYSSEN") !== -1 || n.indexOf("TK") !== -1) return "티케이";
     if (n.indexOf("미쓰비시") !== -1 || n.indexOf("MITSUBISHI") !== -1) return "미쓰비시";
