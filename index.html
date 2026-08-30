@@ -440,12 +440,67 @@ kakao.maps.load(function () {
 
   var currentMarkers = [];
 
+  // 줌 레벨과 무관하게, 화면 안에 한 번에 보여줄 개별 마커 수를 이 이하로 제한한다.
+  // 초과하면(도심 밀집지 등) 격자로 묶어서 건수 배지만 보여주고, 배지를 클릭하면
+  // 그 지점으로 확대해서 개별 마커가 보이게 한다.
+  var DENSITY_LIMIT = 600;
+  var densityBadges = [];
+
+  function clearDensityBadges() {
+    densityBadges.forEach(function (o) { o.setMap(null); });
+    densityBadges = [];
+  }
+
+  function renderDensityGrid(items) {
+    clearDensityBadges();
+    var bounds = map.getBounds();
+    var sw = bounds.getSouthWest();
+    var ne = bounds.getNorthEast();
+    var GRID = 8;
+    var latStep = (ne.getLat() - sw.getLat()) / GRID || 0.0001;
+    var lngStep = (ne.getLng() - sw.getLng()) / GRID || 0.0001;
+    var cells = {};
+    items.forEach(function (item) {
+      var row = Math.min(GRID - 1, Math.max(0, Math.floor((item.lat - sw.getLat()) / latStep)));
+      var col = Math.min(GRID - 1, Math.max(0, Math.floor((item.lng - sw.getLng()) / lngStep)));
+      var key = row + "_" + col;
+      if (!cells[key]) cells[key] = { sumLat: 0, sumLng: 0, count: 0 };
+      cells[key].sumLat += item.lat;
+      cells[key].sumLng += item.lng;
+      cells[key].count++;
+    });
+    Object.keys(cells).forEach(function (key) {
+      var c = cells[key];
+      var pos = new kakao.maps.LatLng(c.sumLat / c.count, c.sumLng / c.count);
+      var el = document.createElement("div");
+      el.className = "region-summary-badge";
+      el.textContent = c.count.toLocaleString();
+      el.style.cursor = "pointer";
+      el.addEventListener("click", function () {
+        map.setLevel(Math.max(1, map.getLevel() - 3));
+        map.panTo(pos);
+      });
+      var overlay = new kakao.maps.CustomOverlay({ position: pos, content: el, yAnchor: 0.5, xAnchor: 0.5, zIndex: 3 });
+      overlay.setMap(map);
+      densityBadges.push(overlay);
+    });
+  }
+
   function refresh() {
     closeInfoWindow();
     var visible = getVisible(getFiltered(getCandidateItems()));
-    currentMarkers = renderMarkers(visible);
+
+    if (visible.length > DENSITY_LIMIT) {
+      if (Object.keys(markersById).length > 0) clearDetailMarkers();
+      renderDensityGrid(visible);
+      document.getElementById("search-status").textContent =
+        "표시된 승강기: " + visible.length.toLocaleString() + "건 (밀집 지역 - 배지를 눌러 확대하면 개별 표시)";
+    } else {
+      if (densityBadges.length > 0) clearDensityBadges();
+      currentMarkers = renderMarkers(visible);
+      document.getElementById("search-status").textContent = "표시된 승강기: " + visible.length.toLocaleString() + "건";
+    }
     updateDashboard(visible);
-    document.getElementById("search-status").textContent = "표시된 승강기: " + visible.length.toLocaleString() + "건";
   }
 
   function doSearch() {
@@ -582,6 +637,7 @@ kakao.maps.load(function () {
     if (level >= DETAIL_ZOOM_LEVEL) {
       if (detailModeActive) {
         clearDetailMarkers();
+        clearDensityBadges();
         detailModeActive = false;
       }
       renderSummaryOverlays();
