@@ -131,16 +131,14 @@ kakao.maps.load(function () {
   var COMPANY_COLORS = { "현대": "#2E7D32", "오티스": "#1565C0", "티케이": "#6A1B9A", "미쓰비시": "#C62828", "기타": "#000000" };
 
   function buildingSvgDataUrl(color) {
-    // 2층짜리 작은 건물 (창문 2줄 = 2개 층, 문 1개)
+    // 더 작은 건물 아이콘 (창문 한 줄 2개 + 문 1개)
     var svg =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="26" viewBox="0 0 20 26">' +
-      '<ellipse cx="10" cy="24" rx="6" ry="1.8" fill="#000000" opacity="0.15"/>' +
-      '<rect x="4" y="4" width="12" height="18" rx="2" fill="' + color + '" stroke="#ffffff" stroke-width="1.2"/>' +
-      '<rect x="6.3" y="6.5" width="2.8" height="2.8" fill="#ffffff"/>' +
-      '<rect x="10.9" y="6.5" width="2.8" height="2.8" fill="#ffffff"/>' +
-      '<rect x="6.3" y="11.5" width="2.8" height="2.8" fill="#ffffff"/>' +
-      '<rect x="10.9" y="11.5" width="2.8" height="2.8" fill="#ffffff"/>' +
-      '<rect x="8.2" y="17" width="3.6" height="5" fill="#ffffff"/>' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="18" viewBox="0 0 14 18">' +
+      '<ellipse cx="7" cy="16.5" rx="4" ry="1.3" fill="#000000" opacity="0.15"/>' +
+      '<rect x="3" y="3" width="8" height="12" rx="1.5" fill="' + color + '" stroke="#ffffff" stroke-width="1"/>' +
+      '<rect x="4.3" y="5" width="2" height="2" fill="#ffffff"/>' +
+      '<rect x="7.7" y="5" width="2" height="2" fill="#ffffff"/>' +
+      '<rect x="5.8" y="10.5" width="2.4" height="3.5" fill="#ffffff"/>' +
       '</svg>';
     return "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(svg);
   }
@@ -151,8 +149,8 @@ kakao.maps.load(function () {
       var color = COMPANY_COLORS[group] || COMPANY_COLORS["기타"];
       markerImageCache[group] = new kakao.maps.MarkerImage(
         buildingSvgDataUrl(color),
-        new kakao.maps.Size(20, 26),
-        { offset: new kakao.maps.Point(10, 24) }
+        new kakao.maps.Size(14, 18),
+        { offset: new kakao.maps.Point(7, 16.5) }
       );
     }
     return markerImageCache[group];
