@@ -121,7 +121,7 @@ kakao.maps.load(function () {
     return MAJOR_COMPANY_DISPLAY_NAME[bucket];
   }
 
-  var COMPANY_COLORS = { "현대": "#2E7D32", "오티스": "#1565C0", "티케이": "#795548", "미쓰비시": "#C62828", "기타": "#757575" };
+  var COMPANY_COLORS = { "현대": "#2E7D32", "오티스": "#1565C0", "티케이": "#6A1B9A", "미쓰비시": "#C62828", "기타": "#000000" };
 
   function buildingSvgDataUrl(color) {
     var svg =
@@ -169,6 +169,37 @@ kakao.maps.load(function () {
     center: new kakao.maps.LatLng(36.35, 127.8),
     level: 13,
   });
+
+  // 카카오맵이 기본 제공하는 지도/스카이뷰 전환 버튼 (커스텀 스타일링은 API에서 지원 안 함)
+  map.addControl(new kakao.maps.MapTypeControl(), kakao.maps.ControlPosition.TOPRIGHT);
+
+  // 구 경계선(현재 서울 25개 구만 시범 적용) - 카카오맵 타일엔 없는 기능이라
+  // 공공데이터(서울 열린데이터광장, JUSO 2015) 경계 좌표를 폴리곤으로 직접 그림
+  function renderDistrictBoundaries(url, strokeColor, strokeWeight) {
+    fetch(url)
+      .then(function (res) { return res.ok ? res.json() : null; })
+      .then(function (geojson) {
+        if (!geojson) return;
+        geojson.features.forEach(function (feature) {
+          var polygons = feature.geometry.type === "MultiPolygon"
+            ? feature.geometry.coordinates
+            : [feature.geometry.coordinates];
+          polygons.forEach(function (rings) {
+            var path = rings[0].map(function (c) { return new kakao.maps.LatLng(c[1], c[0]); });
+            new kakao.maps.Polygon({
+              map: map,
+              path: path,
+              strokeWeight: strokeWeight,
+              strokeColor: strokeColor,
+              strokeOpacity: 0.85,
+              fillOpacity: 0,
+            });
+          });
+        });
+      })
+      .catch(function () { /* 경계 데이터 없으면 그냥 무시 */ });
+  }
+  renderDistrictBoundaries("./data/seoul_gu_boundary.json", "#333333", 3);
 
   var clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 6 });
   // 카카오 InfoWindow는 내용 길이에 따라 박스 높이를 잘못 계산해 잘리는 경우가 있어
