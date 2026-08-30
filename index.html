@@ -93,6 +93,15 @@ kakao.maps.load(function () {
     return "기타";
   }
 
+  var MAJOR_COMPANY_DISPLAY_NAME = { "오티스": "오티스", "현대": "현대", "티케이": "티케이(티센)", "미쓰비시": "미쓰비시" };
+
+  function displayCompanyName(name) {
+    if (!name) return "-";
+    var bucket = classifyCompany(name);
+    if (bucket === "기타") return name; // 중소업체는 풀네임 그대로
+    return MAJOR_COMPANY_DISPLAY_NAME[bucket];
+  }
+
   var map = new kakao.maps.Map(document.getElementById("map"), {
     center: new kakao.maps.LatLng(36.35, 127.8),
     level: 13,
@@ -169,10 +178,11 @@ kakao.maps.load(function () {
       '<div class="info-window">' +
         "<b>" + (item.name || "이름없음") + "</b><br/>" +
         (item.address || "") + "<br/>" +
-        "제조업체: " + (item.manufacturer || "-") + "<br/>" +
-        "유지보수업체: " + (item.mntCompany || "-") + "<br/>" +
+        "제조: " + displayCompanyName(item.manufacturer) + "<br/>" +
+        "보수: " + displayCompanyName(item.mntCompany) + "<br/>" +
         "대수: " + (item.unitCount ? item.unitCount + "대" : "-") + "<br/>" +
         "상태: " + (item.status || "-") + " / 종류: " + (item.kind || "-") + "<br/>" +
+        "최초설치일: " + (item.firstInstallDate || "-") + "<br/>" +
         "설치일: " + (item.installDate || "-") + "<br/>" +
         "승강기번호: " + item.id +
         (item.projectNo ? "<br/>프로젝트번호: " + item.projectNo : "") +

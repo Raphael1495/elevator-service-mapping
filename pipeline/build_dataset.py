@@ -31,6 +31,7 @@ NEEDED_COLUMNS = [
     "ELVTRSTTS",
     "ELVTRKINDNM",
     "INSTALLATIONDE",
+    "FRSTINSTALLATIONDE",
 ]
 
 
@@ -138,6 +139,7 @@ def main():
                         "unitCount": unit_counts.get(name) if name else None,
                         "status": vals[idx["ELVTRSTTS"]],
                         "kind": vals[idx["ELVTRKINDNM"]],
+                        "firstInstallDate": vals[idx["FRSTINSTALLATIONDE"]],
                         "installDate": vals[idx["INSTALLATIONDE"]],
                         "projectNo": project_map.get(eno),
                     }
