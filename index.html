@@ -215,7 +215,7 @@ kakao.maps.load(function () {
       })
       .catch(function () { /* 경계 데이터 없으면 그냥 무시 */ });
   }
-  renderDistrictBoundaries("./data/seoul_gu_boundary.json", "#333333");
+  renderDistrictBoundaries("./data/seoul_gu_boundary.json", "#2563EB");
   kakao.maps.event.addListener(map, "zoom_changed", updateDistrictStrokeWeights);
 
   var clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 6 });
