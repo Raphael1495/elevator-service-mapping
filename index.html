@@ -46,8 +46,19 @@
   #dashboard td.count { text-align: right; font-weight: bold; }
   #dashboard tr.total td { border-top: 1px solid #ddd; padding-top: 5px; font-weight: bold; }
 
-  .info-window { padding: 8px 10px; font-size: 12px; line-height: 1.6; min-width: 200px; }
+  .info-window {
+    position: relative;
+    padding: 10px 28px 10px 12px; font-size: 12px; line-height: 1.6;
+    min-width: 200px; max-width: 260px; width: max-content;
+    background: #fff; border: 1px solid #ccc; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
   .info-window b { font-size: 13px; }
+  .info-window .close-btn {
+    position: absolute; top: 4px; right: 6px; cursor: pointer;
+    color: #999; font-size: 14px; line-height: 1; padding: 4px;
+  }
+  .info-window .close-btn:hover { color: #333; }
 </style>
 </head>
 <body>
@@ -108,7 +119,9 @@ kakao.maps.load(function () {
   });
 
   var clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 6 });
-  var infoWindow = new kakao.maps.InfoWindow({ zIndex: 1 });
+  // 카카오 InfoWindow는 내용 길이에 따라 박스 높이를 잘못 계산해 잘리는 경우가 있어
+  // 대신 CustomOverlay + 직접 스타일링한 div로 내용 길이에 맞춰 자동으로 커지게 처리
+  var overlay = new kakao.maps.CustomOverlay({ yAnchor: 1.15, zIndex: 2 });
 
   kakao.maps.event.addListener(map, "click", function () {
     closeInfoWindow();
@@ -174,25 +187,29 @@ kakao.maps.load(function () {
   }
 
   function openInfoWindow(marker, item) {
-    infoWindow.setContent(
-      '<div class="info-window">' +
-        "<b>" + (item.name || "이름없음") + "</b><br/>" +
-        (item.address || "") + "<br/>" +
-        "제조: " + displayCompanyName(item.manufacturer) + " / 보수: " + displayCompanyName(item.mntCompany) + "<br/>" +
-        "대수: " + (item.unitCount ? item.unitCount + "대" : "-") + "<br/>" +
-        "상태: " + (item.status || "-") + " / 종류: " + (item.kind || "-") + "<br/>" +
-        "최초설치일: " + (item.firstInstallDate || "-") + "<br/>" +
-        "설치일: " + (item.installDate || "-") + "<br/>" +
-        "승강기번호: " + item.id +
-        (item.projectNo ? "<br/>프로젝트번호: " + item.projectNo : "") +
-      "</div>"
-    );
-    infoWindow.open(map, marker);
+    var content = document.createElement("div");
+    content.className = "info-window";
+    content.innerHTML =
+      "<span class=\"close-btn\">&times;</span>" +
+      "<b>" + (item.name || "이름없음") + "</b><br/>" +
+      (item.address || "") + "<br/>" +
+      "제조: " + displayCompanyName(item.manufacturer) + " / 보수: " + displayCompanyName(item.mntCompany) + "<br/>" +
+      "대수: " + (item.unitCount ? item.unitCount + "대" : "-") + "<br/>" +
+      "상태: " + (item.status || "-") + " / 종류: " + (item.kind || "-") + "<br/>" +
+      "최초설치일: " + (item.firstInstallDate || "-") + "<br/>" +
+      "설치일: " + (item.installDate || "-") + "<br/>" +
+      "승강기번호: " + item.id +
+      (item.projectNo ? "<br/>프로젝트번호: " + item.projectNo : "");
+    content.querySelector(".close-btn").addEventListener("click", closeInfoWindow);
+
+    overlay.setContent(content);
+    overlay.setPosition(marker.getPosition());
+    overlay.setMap(map);
     openMarker = marker;
   }
 
   function closeInfoWindow() {
-    infoWindow.close();
+    overlay.setMap(null);
     openMarker = null;
   }
 
