@@ -178,8 +178,7 @@ kakao.maps.load(function () {
       '<div class="info-window">' +
         "<b>" + (item.name || "이름없음") + "</b><br/>" +
         (item.address || "") + "<br/>" +
-        "제조: " + displayCompanyName(item.manufacturer) + "<br/>" +
-        "보수: " + displayCompanyName(item.mntCompany) + "<br/>" +
+        "제조: " + displayCompanyName(item.manufacturer) + " / 보수: " + displayCompanyName(item.mntCompany) + "<br/>" +
         "대수: " + (item.unitCount ? item.unitCount + "대" : "-") + "<br/>" +
         "상태: " + (item.status || "-") + " / 종류: " + (item.kind || "-") + "<br/>" +
         "최초설치일: " + (item.firstInstallDate || "-") + "<br/>" +
