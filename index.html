@@ -175,7 +175,22 @@ kakao.maps.load(function () {
 
   // 구 경계선(현재 서울 25개 구만 시범 적용) - 카카오맵 타일엔 없는 기능이라
   // 공공데이터(서울 열린데이터광장, JUSO 2015) 경계 좌표를 폴리곤으로 직접 그림
-  function renderDistrictBoundaries(url, strokeColor, strokeWeight) {
+  // 축소(레벨 숫자 커짐)할수록 선이 빽빽하게 겹쳐 보이므로, 확대 상태에서만 굵게 표시
+  var districtPolygons = [];
+  var DISTRICT_ZOOM_THRESHOLD = 5; // 이 레벨보다 축소되면(숫자가 커지면) 얇게
+
+  function districtStrokeWeight(level) {
+    return level <= DISTRICT_ZOOM_THRESHOLD ? 3 : 1;
+  }
+
+  function updateDistrictStrokeWeights() {
+    var weight = districtStrokeWeight(map.getLevel());
+    districtPolygons.forEach(function (polygon) {
+      polygon.setOptions({ strokeWeight: weight });
+    });
+  }
+
+  function renderDistrictBoundaries(url, strokeColor) {
     fetch(url)
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (geojson) {
@@ -186,20 +201,22 @@ kakao.maps.load(function () {
             : [feature.geometry.coordinates];
           polygons.forEach(function (rings) {
             var path = rings[0].map(function (c) { return new kakao.maps.LatLng(c[1], c[0]); });
-            new kakao.maps.Polygon({
+            var polygon = new kakao.maps.Polygon({
               map: map,
               path: path,
-              strokeWeight: strokeWeight,
+              strokeWeight: districtStrokeWeight(map.getLevel()),
               strokeColor: strokeColor,
               strokeOpacity: 0.85,
               fillOpacity: 0,
             });
+            districtPolygons.push(polygon);
           });
         });
       })
       .catch(function () { /* 경계 데이터 없으면 그냥 무시 */ });
   }
-  renderDistrictBoundaries("./data/seoul_gu_boundary.json", "#333333", 3);
+  renderDistrictBoundaries("./data/seoul_gu_boundary.json", "#333333");
+  kakao.maps.event.addListener(map, "zoom_changed", updateDistrictStrokeWeights);
 
   var clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 6 });
   // 카카오 InfoWindow는 내용 길이에 따라 박스 높이를 잘못 계산해 잘리는 경우가 있어
