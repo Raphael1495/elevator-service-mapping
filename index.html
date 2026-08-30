@@ -49,9 +49,10 @@
   .info-window {
     position: relative;
     padding: 10px 28px 10px 12px; font-size: 12px; line-height: 1.6;
-    min-width: 200px; max-width: 260px; width: max-content;
+    min-width: 200px; max-width: min(360px, 90vw); width: max-content;
     background: #fff; border: 1px solid #ccc; border-radius: 8px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    overflow-wrap: break-word; word-break: keep-all;
     -webkit-user-select: text; -moz-user-select: text; -ms-user-select: text; user-select: text;
   }
   .info-window * { -webkit-user-select: text; -moz-user-select: text; -ms-user-select: text; user-select: text; }
