@@ -5,10 +5,12 @@
 - 아직 지오코딩이 끝나지 않은 주소는 건너뛴다 (geocode.py를 며칠에 걸쳐 실행하면서
   이 스크립트를 다시 돌리면 점점 더 많은 데이터가 채워진다).
 - 프로젝트번호(projectNo)는 현대엘리베이터가 직접 관리하는 건에만 존재한다 (없으면 null).
-- 실행: python pipeline/build_dataset.py
+- 실행: python pipeline/build_dataset.py [건수제한]
+  건수제한을 생략하면 지오코딩된 것 전체를 반영한다.
 """
 import json
 import os
+import sys
 from collections import Counter
 
 import pandas as pd
@@ -100,6 +102,8 @@ def load_project_no_map():
 
 
 def main():
+    limit = int(sys.argv[1]) if len(sys.argv) > 1 else None
+
     cache = load_cache()
     addr_map = load_addr_map()
     project_map = load_project_no_map()
@@ -116,6 +120,8 @@ def main():
             header = [c.v for c in next(rows)]
             idx = {name: header.index(name) for name in NEEDED_COLUMNS}
             for row in rows:
+                if limit is not None and len(records) >= limit:
+                    break
                 vals = [c.v for c in row]
                 eno = normalize_key(vals[idx["ELEVATORNO"]])
                 addr = addr_map.get(eno)
