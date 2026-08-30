@@ -175,8 +175,8 @@ kakao.maps.load(function () {
   // 카카오맵이 기본 제공하는 지도/스카이뷰 전환 버튼 (커스텀 스타일링은 API에서 지원 안 함)
   map.addControl(new kakao.maps.MapTypeControl(), kakao.maps.ControlPosition.TOPRIGHT);
 
-  // 구 경계선(현재 서울 25개 구만 시범 적용) - 카카오맵 타일엔 없는 기능이라
-  // 공공데이터(서울 열린데이터광장, JUSO 2015) 경계 좌표를 폴리곤으로 직접 그림
+  // 전국 시/군/구 경계선 - 카카오맵 타일엔 없는 기능이라
+  // 공공데이터(KOSTAT 2013 행정구역 경계) 좌표를 폴리곤으로 직접 그림
   // 축소(레벨 숫자 커짐)할수록 선이 빽빽하게 겹쳐 보이므로, 확대 상태에서만 굵게 표시
   var districtPolygons = [];
   var DISTRICT_ZOOM_THRESHOLD = 5; // 이 레벨보다 축소되면(숫자가 커지면) 얇게
@@ -217,7 +217,7 @@ kakao.maps.load(function () {
       })
       .catch(function () { /* 경계 데이터 없으면 그냥 무시 */ });
   }
-  renderDistrictBoundaries("./data/seoul_gu_boundary.json", "#2563EB");
+  renderDistrictBoundaries("./data/sigungu_boundary.json", "#2563EB");
   kakao.maps.event.addListener(map, "zoom_changed", updateDistrictStrokeWeights);
 
   // 실측 결과 카카오맵 축척눈금이 "2km"로 보이는 지점이 레벨 8 -> 레벨 8까지는 개별 마커, 레벨 9부터 클러스터링
@@ -400,14 +400,55 @@ kakao.maps.load(function () {
     });
   }
 
-  loadData("./data/elevators.json")
+  // 전국 데이터를 지역(시/도)별 파일로 나눠뒀기 때문에, 지금 지도 화면에 걸치는
+  // 지역 파일만 불러온다 (regions_manifest.json 에 지역별 위경도 범위가 있음).
+  var regionsManifest = null;
+  var loadedRegions = {};
+
+  function boundsOverlap(info, sw, ne) {
+    return !(info.maxLat < sw.getLat() || info.minLat > ne.getLat() ||
+             info.maxLng < sw.getLng() || info.minLng > ne.getLng());
+  }
+
+  function loadRegionsInView() {
+    if (!regionsManifest) return;
+    var bounds = map.getBounds();
+    var sw = bounds.getSouthWest();
+    var ne = bounds.getNorthEast();
+    var toLoad = [];
+    Object.keys(regionsManifest).forEach(function (region) {
+      if (loadedRegions[region]) return;
+      var info = regionsManifest[region];
+      if (boundsOverlap(info, sw, ne)) {
+        loadedRegions[region] = true;
+        toLoad.push(region);
+      }
+    });
+    if (toLoad.length === 0) return;
+
+    document.getElementById("search-status").textContent = "지역 데이터 불러오는 중... (" + toLoad.join(", ") + ")";
+    Promise.all(
+      toLoad.map(function (region) {
+        return loadData("./" + regionsManifest[region].file).catch(function () { return []; });
+      })
+    ).then(function (results) {
+      results.forEach(function (items) { allData = allData.concat(items); });
+      refresh();
+    });
+  }
+
+  loadData("./data/regions_manifest.json")
+    .then(function (manifest) {
+      regionsManifest = manifest;
+      loadRegionsInView();
+      kakao.maps.event.addListener(map, "idle", loadRegionsInView);
+    })
     .catch(function () {
       document.getElementById("search-status").textContent = "실데이터 없음 - 샘플 데이터로 표시";
-      return loadData("./data/elevators.sample.json");
-    })
-    .then(function (data) {
-      allData = data;
-      refresh();
+      return loadData("./data/elevators.sample.json").then(function (data) {
+        allData = data;
+        refresh();
+      });
     })
     .catch(function (err) {
       document.getElementById("search-status").textContent = "데이터 로딩 실패: " + err.message;

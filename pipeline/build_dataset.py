@@ -1,7 +1,11 @@
 """
 국가DB(aa 시트) + 주소 매핑 + 지오코딩 캐시 + 현대엘리베이터 자체 관리대수(원본, 프로젝트번호)를
-합쳐서 지도에서 바로 쓸 수 있는 data/elevators.json 을 만든다.
+합쳐서 지도에서 바로 쓸 수 있는 데이터를 만든다.
 
+- 전국 데이터를 파일 하나로 만들면 89만 건 기준 수백MB가 되어 GitHub 파일 용량 제한(100MB)에
+  걸리고 브라우저도 느려지므로, 주소 앞자리(시/도)로 나눠서 data/regions/{시도명}.json 으로 저장한다.
+- data/regions_manifest.json 에는 지역별 건수와 위경도 범위(bbox)를 담아, 프론트에서
+  현재 지도 화면에 걸치는 지역 파일만 불러올 수 있게 한다.
 - 아직 지오코딩이 끝나지 않은 주소는 건너뛴다 (geocode.py를 며칠에 걸쳐 실행하면서
   이 스크립트를 다시 돌리면 점점 더 많은 데이터가 채워진다).
 - 프로젝트번호(projectNo)는 현대엘리베이터가 직접 관리하는 건에만 존재한다 (없으면 null).
@@ -11,7 +15,7 @@
 import json
 import os
 import sys
-from collections import Counter
+from collections import Counter, defaultdict
 
 import pandas as pd
 import pyxlsb
@@ -23,7 +27,8 @@ DB_SOURCE = os.path.join(BASE_DIR, "국가DB_260805.xlsb")
 DB_SHEET = "aa"
 MGMT_SOURCE = os.path.join(BASE_DIR, "2026.07월 관리대수(원본).xlsb")
 MGMT_SHEET = "download"
-OUT_FILE = os.path.join(BASE_DIR, "data", "elevators.json")
+REGIONS_DIR = os.path.join(BASE_DIR, "data", "regions")
+MANIFEST_FILE = os.path.join(BASE_DIR, "data", "regions_manifest.json")
 
 NEEDED_COLUMNS = [
     "ELEVATORNO",
@@ -55,6 +60,50 @@ def pad_elevator_no(eno):
 def pad_project_no(pjt):
     """프로젝트번호(6자리, 0패딩)로 복원."""
     return pjt.zfill(6) if pjt else pjt
+
+
+# 원본 주소에 개칭 전/후 표기가 섞여 있어(예: 강원도 -> 강원특별자치도, 2023년 개칭)
+# 같은 지역이 여러 키로 쪼개지지 않도록 시/도명을 최신 공식 명칭으로 통일한다.
+SIDO_ALIASES = {
+    "강원도": "강원특별자치도",
+    "강원": "강원특별자치도",
+    "전라북도": "전북특별자치도",
+    "전북": "전북특별자치도",
+    "경기": "경기도",
+    "서울": "서울특별시",
+    "부산": "부산광역시",
+    "대구": "대구광역시",
+    "인천": "인천광역시",
+    "광주": "광주광역시",
+    "대전": "대전광역시",
+    "울산": "울산광역시",
+    "세종": "세종특별자치시",
+    "충북": "충청북도",
+    "충남": "충청남도",
+    "전남": "전라남도",
+    "경북": "경상북도",
+    "경남": "경상남도",
+    "제주": "제주특별자치도",
+}
+
+KNOWN_SIDO = set(SIDO_ALIASES.values()) | {
+    "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", "대전광역시",
+    "울산광역시", "세종특별자치시", "경기도", "충청북도", "충청남도", "전라남도",
+    "경상북도", "경상남도", "제주특별자치도", "강원특별자치도", "전북특별자치도",
+}
+
+
+def region_of(address):
+    """주소의 '시/도 + 시/군/구' 두 토큰을 지역 구분 키로 사용 (시/도 하나로만 나누면
+    경기도처럼 인구 밀집 지역이 혼자 거대 파일이 되어버리는 문제를 피하기 위함)."""
+    if not address:
+        return "기타"
+    tokens = address.strip().split(" ")
+    sido = SIDO_ALIASES.get(tokens[0], tokens[0])
+    if sido not in KNOWN_SIDO:
+        return "기타"
+    sigungu = tokens[1] if len(tokens) > 1 else ""
+    return (sido + " " + sigungu).strip()
 
 
 def count_units_by_building():
@@ -156,11 +205,33 @@ def main():
                     }
                 )
 
-    os.makedirs(os.path.dirname(OUT_FILE), exist_ok=True)
-    with open(OUT_FILE, "w", encoding="utf-8") as f:
-        json.dump(records, f, ensure_ascii=False)
+    by_region = defaultdict(list)
+    for r in records:
+        by_region[region_of(r["address"])].append(r)
 
-    print(f"완료: {len(records)}건 저장 -> {OUT_FILE}")
+    os.makedirs(REGIONS_DIR, exist_ok=True)
+    manifest = {}
+    for region, items in by_region.items():
+        file_name = f"{region}.json"
+        with open(os.path.join(REGIONS_DIR, file_name), "w", encoding="utf-8") as f:
+            json.dump(items, f, ensure_ascii=False)
+        lats = [it["lat"] for it in items]
+        lngs = [it["lng"] for it in items]
+        manifest[region] = {
+            "file": f"regions/{file_name}",
+            "count": len(items),
+            "minLat": min(lats),
+            "maxLat": max(lats),
+            "minLng": min(lngs),
+            "maxLng": max(lngs),
+        }
+
+    with open(MANIFEST_FILE, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False)
+
+    print(f"완료: {len(records)}건 -> {len(by_region)}개 지역 파일 + {MANIFEST_FILE}")
+    for region, info in sorted(manifest.items(), key=lambda x: -x[1]["count"]):
+        print(f"  {region}: {info['count']}건")
     print(f"주소 매핑 없음(스킵): {skipped_no_addr}건")
     print(f"좌표 미완료(아직 지오코딩 안됨, 스킵): {skipped_no_coord}건")
     print(f"프로젝트번호 있는 건(현대엘리베이터 직영): {sum(1 for r in records if r['projectNo'])}건")
