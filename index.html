@@ -649,13 +649,18 @@ kakao.maps.load(function () {
     var pos = new kakao.maps.LatLng(target.lat, target.lng);
     map.setLevel(3);
     map.panTo(pos);
-    // 이동/확대가 끝나면 idle이 발생하면서 handleViewChange가 먼저 실행되어
-    // 해당 지역 마커를 그려주므로, 그 다음에 정보창을 열어준다.
-    kakao.maps.event.addListener(map, "idle", function onceIdle() {
-      kakao.maps.event.removeListener(map, "idle", onceIdle);
-      var marker = markersById[target.id];
-      if (marker) openInfoWindow(marker, target);
-    });
+
+    // idle(이동 완료) 이벤트를 기다렸다가 마커를 찾으면, 그 지역 데이터를 불러오는
+    // 비동기 작업이 아직 안 끝났을 때는 마커가 없어서 정보창이 안 열리는 타이밍
+    // 문제가 있었음 - 데이터는 검색 단계에서 이미 확보되어 있으므로, 화면 이동과
+    // 무관하게 마커를 바로 만들어서 확실하게 정보창을 연다.
+    var marker = markersById[target.id];
+    if (!marker) {
+      marker = makeMarker(target);
+      markersById[target.id] = marker;
+      clusterer.addMarkers([marker]);
+    }
+    openInfoWindow(marker, target);
   }
 
   function doSearch() {
