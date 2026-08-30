@@ -206,6 +206,19 @@ kakao.maps.load(function () {
   });
   window.__debugMap = map; // 콘솔에서 __debugMap.getLevel() 로 현재 레벨 확인용
 
+  // 브라우저 위치 권한을 허용하면 접속자 위치 근처로 초기 화면을 옮겨준다.
+  // 거부/미지원/실패 시에는 기본값(전국 화면)을 그대로 사용한다.
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        map.setCenter(new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude));
+        map.setLevel(6);
+      },
+      function () { /* 위치 거부/실패 - 기본 전국 화면 유지 */ },
+      { timeout: 8000, maximumAge: 600000 }
+    );
+  }
+
   // 카카오맵이 기본 제공하는 지도/스카이뷰 전환 버튼 (커스텀 스타일링은 API에서 지원 안 함)
   map.addControl(new kakao.maps.MapTypeControl(), kakao.maps.ControlPosition.TOPRIGHT);
 
