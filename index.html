@@ -740,7 +740,7 @@ kakao.maps.load(function () {
       overlay.setMap(map);
       summaryOverlays.push(overlay);
     });
-    document.getElementById("search-status").textContent = "레벨 " + DETAIL_ZOOM_LEVEL + " 이하로 확대하면 개별 승강기가 표시됩니다.";
+    document.getElementById("search-status").textContent = "하나의 화면에 최대 " + DENSITY_LIMIT.toLocaleString() + "개의 승강기만 표시됩니다.";
   }
 
   function clearDetailMarkers() {
