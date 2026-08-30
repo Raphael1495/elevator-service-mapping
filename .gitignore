@@ -1,0 +1,19 @@
+# 원본 데이터 (용량 크고 민감 컬럼 포함 - 절대 커밋 금지)
+*.xlsb
+*.xlsx
+*.xls
+*.csv
+
+# 지오코딩 진행상황 캐시 (로컬 전용, 매일 갱신되는 대용량 중간 산출물)
+pipeline/cache/
+pipeline/*.log
+
+# 카카오 REST API 키 등 로컬 설정
+.env
+config.local.json
+
+# OS / 편집기
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
