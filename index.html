@@ -477,8 +477,9 @@ kakao.maps.load(function () {
       el.textContent = c.count.toLocaleString();
       el.style.cursor = "pointer";
       el.addEventListener("click", function () {
-        map.setLevel(Math.max(1, map.getLevel() - 3));
-        map.panTo(pos);
+        // anchor를 지정해서 화면 중심이 아니라 클릭한 배지 위치를 기준으로 바로 확대
+        // (먼저 확대하고 나서 따로 이동시키면 옆으로 미끄러지는 것처럼 보임)
+        map.setLevel(Math.max(1, map.getLevel() - 3), { anchor: pos, animate: true });
       });
       var overlay = new kakao.maps.CustomOverlay({ position: pos, content: el, yAnchor: 0.5, xAnchor: 0.5, zIndex: 3 });
       overlay.setMap(map);
