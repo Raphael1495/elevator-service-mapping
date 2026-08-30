@@ -443,7 +443,7 @@ kakao.maps.load(function () {
   // 줌 레벨과 무관하게, 화면 안에 한 번에 보여줄 개별 마커 수를 이 이하로 제한한다.
   // 초과하면(도심 밀집지 등) 격자로 묶어서 건수 배지만 보여주고, 배지를 클릭하면
   // 그 지점으로 확대해서 개별 마커가 보이게 한다.
-  var DENSITY_LIMIT = 600;
+  var DENSITY_LIMIT = 1000;
   var densityBadges = [];
 
   function clearDensityBadges() {
