@@ -182,23 +182,18 @@ kakao.maps.load(function () {
   map.addControl(new kakao.maps.MapTypeControl(), kakao.maps.ControlPosition.TOPRIGHT);
 
   // 전국 시/군/구 경계선 - 카카오맵 타일엔 없는 기능이라
-  // 공공데이터(KOSTAT 2013 행정구역 경계) 좌표를 폴리곤으로 직접 그림
-  // 축소(레벨 숫자 커짐)할수록 선이 빽빽하게 겹쳐 보이므로, 확대 상태에서만 굵게 표시
-  var districtPolygons = [];
+  // 공공데이터(KOSTAT 2013 행정구역 경계) 좌표를 폴리곤으로 직접 그림.
+  // 251개를 전국 범위에서 항상 다 그려두면 지도를 움직일 때마다 매번 다시 계산해야 해서
+  // 느려지므로, 마커와 마찬가지로 지금 화면에 걸치는 것만 실제 Polygon으로 만든다.
+  var districtBoundaries = []; // {path, bbox, polygon(생성 전엔 null)}
   var DISTRICT_ZOOM_THRESHOLD = 5; // 이 레벨보다 축소되면(숫자가 커지면) 얇게
+  var DISTRICT_STROKE_COLOR = "#2563EB";
 
   function districtStrokeWeight(level) {
     return level <= DISTRICT_ZOOM_THRESHOLD ? 3 : 1;
   }
 
-  function updateDistrictStrokeWeights() {
-    var weight = districtStrokeWeight(map.getLevel());
-    districtPolygons.forEach(function (polygon) {
-      polygon.setOptions({ strokeWeight: weight });
-    });
-  }
-
-  function renderDistrictBoundaries(url, strokeColor) {
+  function loadDistrictBoundaries(url) {
     fetch(url)
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (geojson) {
@@ -209,22 +204,49 @@ kakao.maps.load(function () {
             : [feature.geometry.coordinates];
           polygons.forEach(function (rings) {
             var path = rings[0].map(function (c) { return new kakao.maps.LatLng(c[1], c[0]); });
-            var polygon = new kakao.maps.Polygon({
-              map: map,
+            var lats = path.map(function (p) { return p.getLat(); });
+            var lngs = path.map(function (p) { return p.getLng(); });
+            districtBoundaries.push({
               path: path,
-              strokeWeight: districtStrokeWeight(map.getLevel()),
-              strokeColor: strokeColor,
-              strokeOpacity: 0.85,
-              fillOpacity: 0,
+              bbox: {
+                minLat: Math.min.apply(null, lats), maxLat: Math.max.apply(null, lats),
+                minLng: Math.min.apply(null, lngs), maxLng: Math.max.apply(null, lngs),
+              },
+              polygon: null,
             });
-            districtPolygons.push(polygon);
           });
         });
+        updateVisibleDistrictBoundaries();
       })
       .catch(function () { /* 경계 데이터 없으면 그냥 무시 */ });
   }
-  renderDistrictBoundaries("./data/sigungu_boundary.json", "#2563EB");
-  kakao.maps.event.addListener(map, "zoom_changed", updateDistrictStrokeWeights);
+
+  function updateVisibleDistrictBoundaries() {
+    var bounds = map.getBounds();
+    var sw = bounds.getSouthWest();
+    var ne = bounds.getNorthEast();
+    var weight = districtStrokeWeight(map.getLevel());
+    districtBoundaries.forEach(function (piece) {
+      var overlap = boundsOverlap(piece.bbox, sw, ne);
+      if (overlap && !piece.polygon) {
+        piece.polygon = new kakao.maps.Polygon({
+          map: map,
+          path: piece.path,
+          strokeWeight: weight,
+          strokeColor: DISTRICT_STROKE_COLOR,
+          strokeOpacity: 0.85,
+          fillOpacity: 0,
+        });
+      } else if (!overlap && piece.polygon) {
+        piece.polygon.setMap(null);
+        piece.polygon = null;
+      } else if (overlap && piece.polygon) {
+        piece.polygon.setOptions({ strokeWeight: weight });
+      }
+    });
+  }
+  loadDistrictBoundaries("./data/sigungu_boundary.json");
+  kakao.maps.event.addListener(map, "idle", updateVisibleDistrictBoundaries);
 
   // 실측 결과 카카오맵 축척눈금이 "2km"로 보이는 지점이 레벨 8 -> 레벨 8까지는 개별 마커, 레벨 9부터 클러스터링
   var clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 9 });
