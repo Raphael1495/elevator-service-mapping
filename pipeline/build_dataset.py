@@ -9,6 +9,7 @@
 """
 import json
 import os
+from collections import Counter
 
 import pandas as pd
 import pyxlsb
@@ -41,6 +42,26 @@ def normalize_key(value):
         return str(int(float(value)))
     except (TypeError, ValueError):
         return str(value).strip()
+
+
+def pad_elevator_no(eno):
+    """국가DB 공식 표기(7자리, 0패딩)로 복원."""
+    return eno.zfill(7) if eno else eno
+
+
+def count_units_by_building():
+    """건물명(BULDNM)이 같은 승강기번호 개수 - 국가DB 전체 기준(지오코딩 여부와 무관)."""
+    counts = Counter()
+    with pyxlsb.open_workbook(DB_SOURCE) as wb:
+        with wb.get_sheet(DB_SHEET) as sheet:
+            rows = sheet.rows()
+            header = [c.v for c in next(rows)]
+            idx_name = header.index("BULDNM")
+            for row in rows:
+                name = row[idx_name].v if idx_name < len(row) else None
+                if name:
+                    counts[name] += 1
+    return counts
 
 
 def load_cache():
@@ -81,7 +102,8 @@ def main():
     cache = load_cache()
     addr_map = load_addr_map()
     project_map = load_project_no_map()
-    print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 프로젝트번호 매핑: {len(project_map)}건")
+    unit_counts = count_units_by_building()
+    print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 프로젝트번호 매핑: {len(project_map)}건 / 건물명 종류: {len(unit_counts)}개")
 
     records = []
     skipped_no_addr = 0
@@ -103,15 +125,17 @@ def main():
                 if not coord:
                     skipped_no_coord += 1
                     continue
+                name = vals[idx["BULDNM"]]
                 records.append(
                     {
-                        "id": eno,
+                        "id": pad_elevator_no(eno),
                         "lat": coord["lat"],
                         "lng": coord["lng"],
-                        "name": vals[idx["BULDNM"]],
+                        "name": name,
                         "address": addr,
                         "manufacturer": vals[idx["MANUFACTURERNAME"]],
                         "mntCompany": vals[idx["MNTCPNYNM"]],
+                        "unitCount": unit_counts.get(name) if name else None,
                         "status": vals[idx["ELVTRSTTS"]],
                         "kind": vals[idx["ELVTRKINDNM"]],
                         "installDate": vals[idx["INSTALLATIONDE"]],

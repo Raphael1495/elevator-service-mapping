@@ -101,6 +101,10 @@ kakao.maps.load(function () {
   var clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 6 });
   var infoWindow = new kakao.maps.InfoWindow({ zIndex: 1 });
 
+  kakao.maps.event.addListener(map, "click", function () {
+    closeInfoWindow();
+  });
+
   var allData = [];
   var activeManufacturer = {};
   var activeMntCompany = {};
@@ -137,6 +141,8 @@ kakao.maps.load(function () {
     });
   }
 
+  var openMarker = null;
+
   function renderMarkers(data) {
     clusterer.clear();
     var markers = data.map(function (item) {
@@ -145,7 +151,11 @@ kakao.maps.load(function () {
       marker.__item = item;
 
       kakao.maps.event.addListener(marker, "click", function () {
-        openInfoWindow(marker, item);
+        if (openMarker === marker) {
+          closeInfoWindow();
+        } else {
+          openInfoWindow(marker, item);
+        }
       });
 
       return marker;
@@ -161,13 +171,20 @@ kakao.maps.load(function () {
         (item.address || "") + "<br/>" +
         "제조업체: " + (item.manufacturer || "-") + "<br/>" +
         "유지보수업체: " + (item.mntCompany || "-") + "<br/>" +
+        "대수: " + (item.unitCount ? item.unitCount + "대" : "-") + "<br/>" +
         "상태: " + (item.status || "-") + " / 종류: " + (item.kind || "-") + "<br/>" +
-        "설치일: " + (item.installDate || "-") +
+        "설치일: " + (item.installDate || "-") + "<br/>" +
+        "승강기번호: " + item.id +
         (item.projectNo ? "<br/>프로젝트번호: " + item.projectNo : "") +
-        "<br/>승강기번호: " + item.id +
       "</div>"
     );
     infoWindow.open(map, marker);
+    openMarker = marker;
+  }
+
+  function closeInfoWindow() {
+    infoWindow.close();
+    openMarker = null;
   }
 
   function updateDashboard(data) {
@@ -192,6 +209,7 @@ kakao.maps.load(function () {
   var currentMarkers = [];
 
   function refresh() {
+    closeInfoWindow();
     var filtered = getFiltered();
     currentMarkers = renderMarkers(filtered);
     updateDashboard(filtered);
