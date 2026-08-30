@@ -52,6 +52,11 @@ def pad_elevator_no(eno):
     return eno.zfill(7) if eno else eno
 
 
+def pad_project_no(pjt):
+    """프로젝트번호(6자리, 0패딩)로 복원."""
+    return pjt.zfill(6) if pjt else pjt
+
+
 def count_units_by_building():
     """건물명(BULDNM)이 같은 승강기번호 개수 - 국가DB 전체 기준(지오코딩 여부와 무관)."""
     counts = Counter()
@@ -147,7 +152,7 @@ def main():
                         "kind": vals[idx["ELVTRKINDNM"]],
                         "firstInstallDate": vals[idx["FRSTINSTALLATIONDE"]],
                         "installDate": vals[idx["INSTALLATIONDE"]],
-                        "projectNo": project_map.get(eno),
+                        "projectNo": pad_project_no(project_map.get(eno)),
                     }
                 )
 

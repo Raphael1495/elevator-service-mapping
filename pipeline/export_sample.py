@@ -18,6 +18,7 @@ from build_dataset import (
     load_project_no_map,
     normalize_key,
     pad_elevator_no,
+    pad_project_no,
 )
 import pyxlsb
 import os
@@ -66,7 +67,7 @@ def main():
                         "종류": vals[idx["ELVTRKINDNM"]],
                         "최초설치일": vals[idx["FRSTINSTALLATIONDE"]],
                         "설치일": vals[idx["INSTALLATIONDE"]],
-                        "프로젝트번호": project_map.get(eno),
+                        "프로젝트번호": pad_project_no(project_map.get(eno)),
                     }
                 )
 
