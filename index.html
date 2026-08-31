@@ -1036,9 +1036,12 @@ kakao.maps.load(function () {
     var ne = bounds.getNorthEast();
     clearSummaryOverlays();
 
-    var GRID = 8;
-    var latStep = (ne.getLat() - sw.getLat()) / GRID || 0.0001;
-    var lngStep = (ne.getLng() - sw.getLng()) / GRID || 0.0001;
+    // 위경도 격자는 화면이 넓을 때 지역이 촘촘히 몰린 곳(수도권 등)에서 배지가
+    // 화면 픽셀 기준으로는 여전히 겹치는 문제가 있었음 - 실제 화면 좌표(픽셀)로
+    // 변환해서, 배지 하나가 차지하는 크기만큼 격자를 잡아 겹침을 판정한다.
+    var proj = map.getProjection();
+    var CELL_PX_W = 110;
+    var CELL_PX_H = 34;
     var cells = {};
 
     Object.keys(regionsManifest).forEach(function (region) {
@@ -1048,13 +1051,14 @@ kakao.maps.load(function () {
       if (count === 0) return;
       var centerLat = (info.minLat + info.maxLat) / 2;
       var centerLng = (info.minLng + info.maxLng) / 2;
-      var row = Math.min(GRID - 1, Math.max(0, Math.floor((centerLat - sw.getLat()) / latStep)));
-      var col = Math.min(GRID - 1, Math.max(0, Math.floor((centerLng - sw.getLng()) / lngStep)));
+      var point = proj.containerPointFromCoords(new kakao.maps.LatLng(centerLat, centerLng));
+      var col = Math.floor(point.x / CELL_PX_W);
+      var row = Math.floor(point.y / CELL_PX_H);
       var key = row + "_" + col;
-      if (!cells[key]) cells[key] = { sumLat: 0, sumLng: 0, weight: 0, total: 0, regions: [] };
+      if (!cells[key]) cells[key] = { sumX: 0, sumY: 0, weight: 0, total: 0, regions: [] };
       var cell = cells[key];
-      cell.sumLat += centerLat * count;
-      cell.sumLng += centerLng * count;
+      cell.sumX += point.x * count;
+      cell.sumY += point.y * count;
       cell.weight += count;
       cell.total += count;
       cell.regions.push({ region: region, count: count });
@@ -1062,7 +1066,7 @@ kakao.maps.load(function () {
 
     Object.keys(cells).forEach(function (key) {
       var cell = cells[key];
-      var pos = new kakao.maps.LatLng(cell.sumLat / cell.weight, cell.sumLng / cell.weight);
+      var pos = proj.coordsFromContainerPoint(new kakao.maps.Point(cell.sumX / cell.weight, cell.sumY / cell.weight));
       cell.regions.sort(function (a, b) { return b.count - a.count; });
       var top = cell.regions[0];
 
