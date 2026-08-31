@@ -16,6 +16,7 @@ import json
 import os
 import sys
 from collections import Counter, defaultdict
+from datetime import date
 
 import pandas as pd
 import pyxlsb
@@ -106,6 +107,38 @@ def region_of(address):
         return "기타"
     sigungu = tokens[1] if len(tokens) > 1 else ""
     return (sido + " " + sigungu).strip()
+
+
+# 화면(index.html)의 classifyCompany()와 동일한 규칙 - 지역 랭킹 패널의 업체별
+# 집계가 지도 대시보드 숫자와 어긋나지 않도록 같은 분류 기준을 파이썬에도 둔다.
+def classify_company(name):
+    if not name:
+        return "기타"
+    n = str(name).upper()
+    if "오티스" in n or "OTIS" in n or "엘지산전" in str(name) or "LG산전" in n:
+        return "오티스"
+    if "현대" in str(name):
+        return "현대"
+    if "티센" in str(name) or "티케이" in str(name) or "THYSSEN" in n or "TK" in n:
+        return "티케이"
+    if "미쓰비시" in str(name) or "MITSUBISHI" in n:
+        return "미쓰비시"
+    return "기타"
+
+
+# 승강기안전관리법 기준 정밀안전검사 대상(설치검사일로부터 15년 경과)
+OLD_ELEVATOR_YEARS = 15
+
+
+def is_old(first_install_date):
+    if not first_install_date:
+        return False
+    try:
+        y, m, d = str(first_install_date)[:10].split("-")
+        installed = date(int(y), int(m), int(d))
+    except (ValueError, AttributeError):
+        return False
+    return (date.today() - installed).days / 365.25 >= OLD_ELEVATOR_YEARS
 
 
 def count_units_by_building():
@@ -220,6 +253,7 @@ def main():
             json.dump(items, f, ensure_ascii=False)
         lats = [it["lat"] for it in items]
         lngs = [it["lng"] for it in items]
+        mnt_counts = Counter(classify_company(it["mntCompany"]) for it in items)
         manifest[region] = {
             "file": f"regions/{file_name}",
             "count": len(items),
@@ -227,6 +261,8 @@ def main():
             "maxLat": max(lats),
             "minLng": min(lngs),
             "maxLng": max(lngs),
+            "oldCount": sum(1 for it in items if is_old(it["firstInstallDate"])),
+            "mntCounts": dict(mnt_counts),
         }
 
     with open(MANIFEST_FILE, "w", encoding="utf-8") as f:

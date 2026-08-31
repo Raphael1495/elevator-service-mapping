@@ -19,13 +19,17 @@
   }
 
   #search-panel { width: 270px; padding: 12px; }
-  #search-panel .search-row { display: flex; gap: 6px; }
+  #search-panel .search-row { display: flex; gap: 6px; align-items: center; }
   #search-panel input[type="text"] {
     flex: 1; padding: 7px 8px; border: 1px solid #ccc; border-radius: 5px; font-size: 13px;
   }
   #search-panel button {
     padding: 7px 12px; border: none; border-radius: 5px; background: #FEE500; cursor: pointer; font-weight: bold;
   }
+  #panel-toggle {
+    font-size: 12px; color: #666; cursor: pointer; user-select: none; padding: 4px;
+  }
+  #panel-body.collapsed { display: none; }
   #search-status { margin-top: 6px; font-size: 12px; color: #666; min-height: 16px; }
 
   .filter-group { margin-top: 12px; }
@@ -50,6 +54,31 @@
   #dashboard td { padding: 3px 0; }
   #dashboard td.count { text-align: right; font-weight: bold; }
   #dashboard tr.total td { border-top: 1px solid #ddd; padding-top: 5px; font-weight: bold; }
+
+  #ranking-panel { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
+  #ranking-toggle {
+    display: flex; justify-content: space-between; align-items: center;
+    margin: 0 0 8px 0; font-size: 12px; color: #555; cursor: pointer; user-select: none;
+  }
+  #ranking-toggle .arrow { font-size: 10px; }
+  #ranking-body.collapsed { display: none; }
+  .ranking-section { margin-bottom: 10px; }
+  .ranking-section h5 { margin: 0 0 4px 0; font-size: 11px; color: #777; font-weight: normal; }
+  .ranking-section ol { margin: 0; padding-left: 18px; font-size: 12px; }
+  .ranking-section li { cursor: pointer; padding: 2px 0; }
+  .ranking-section li:hover { color: #2563EB; text-decoration: underline; }
+
+  #my-location-btn {
+    position: fixed; top: 50px; right: 12px; z-index: 15;
+    width: 34px; height: 34px; border-radius: 50%; background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.35); cursor: pointer; font-size: 18px; color: #2563EB;
+    user-select: none;
+  }
+  .my-location-dot {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #4285F4; border: 3px solid #fff; box-shadow: 0 0 3px rgba(0,0,0,0.5);
+  }
 
   .info-window {
     position: relative;
@@ -111,36 +140,56 @@
     <div class="search-row">
       <input type="text" id="search-input" placeholder="승강기번호 / 현장명 / PJT번호" />
       <button id="search-btn">검색</button>
+      <span class="panel-toggle" id="panel-toggle" title="패널 접기/펴기">▾</span>
     </div>
-    <div id="search-status">데이터 로딩 중...</div>
 
-    <div class="filter-group">
-      <h4>제조업체 표시</h4>
-      <div class="chip-row" id="manufacturer-filters"></div>
-    </div>
-    <div class="filter-group">
-      <h4>유지보수업체 표시</h4>
-      <div class="chip-row" id="mntcompany-filters"></div>
-    </div>
-    <div class="filter-group">
-      <h4>노후 승강기</h4>
-      <div class="chip-row">
-        <label class="chip" id="old-only-chip">
-          <input type="checkbox" id="old-only-checkbox" />
-          15년 이상만 보기 (정밀안전검사 대상)
-        </label>
+    <div id="panel-body">
+      <div id="search-status">데이터 로딩 중...</div>
+
+      <div class="filter-group">
+        <h4>제조업체 표시</h4>
+        <div class="chip-row" id="manufacturer-filters"></div>
       </div>
-    </div>
+      <div class="filter-group">
+        <h4>유지보수업체 표시</h4>
+        <div class="chip-row" id="mntcompany-filters"></div>
+      </div>
+      <div class="filter-group">
+        <h4>노후 승강기</h4>
+        <div class="chip-row">
+          <label class="chip" id="old-only-chip">
+            <input type="checkbox" id="old-only-checkbox" />
+            15년 이상만 보기 (정밀안전검사 대상)
+          </label>
+        </div>
+      </div>
 
-    <div id="dashboard">
-      <h4 id="dashboard-toggle">유지보수업체 현황 <span class="arrow" id="dashboard-arrow">▾</span></h4>
-      <div id="dashboard-body">
-        <table id="dashboard-table"></table>
-        <div id="legend"></div>
+      <div id="dashboard">
+        <h4 id="dashboard-toggle">유지보수업체 현황 <span class="arrow" id="dashboard-arrow">▾</span></h4>
+        <div id="dashboard-body">
+          <table id="dashboard-table"></table>
+          <div id="legend"></div>
+        </div>
+      </div>
+
+      <div id="ranking-panel">
+        <h4 id="ranking-toggle">지역 랭킹 <span class="arrow" id="ranking-arrow">▾</span></h4>
+        <div id="ranking-body">
+          <div class="ranking-section">
+            <h5>노후 승강기 많은 지역 Top 10</h5>
+            <ol id="ranking-old"></ol>
+          </div>
+          <div class="ranking-section">
+            <h5>경쟁사 비중 높은 지역 Top 10</h5>
+            <ol id="ranking-competitor"></ol>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </div>
+
+<div id="my-location-btn" title="내 위치로 이동">⌖</div>
 
 <div id="roadview-panel" class="panel">
   <div class="roadview-header">
@@ -229,14 +278,45 @@ kakao.maps.load(function () {
 
   // 브라우저 위치 권한을 허용하면 접속자 위치 근처로 초기 화면을 옮겨준다.
   // 거부/미지원/실패 시에는 기본값(전국 화면)을 그대로 사용한다.
+  var myLocation = null;
+  var myLocationOverlay = null;
+
+  function updateMyLocationDot(lat, lng) {
+    myLocation = { lat: lat, lng: lng };
+    var pos = new kakao.maps.LatLng(lat, lng);
+    if (!myLocationOverlay) {
+      var el = document.createElement("div");
+      el.className = "my-location-dot";
+      myLocationOverlay = new kakao.maps.CustomOverlay({ position: pos, content: el, zIndex: 15 });
+      myLocationOverlay.setMap(map);
+    } else {
+      myLocationOverlay.setPosition(pos);
+    }
+  }
+
+  function goToMyLocation() {
+    if (!myLocation) return;
+    map.setLevel(6, { anchor: new kakao.maps.LatLng(myLocation.lat, myLocation.lng), animate: true });
+    map.panTo(new kakao.maps.LatLng(myLocation.lat, myLocation.lng));
+  }
+
+  document.getElementById("my-location-btn").addEventListener("click", goToMyLocation);
+
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       function (pos) {
         map.setCenter(new kakao.maps.LatLng(pos.coords.latitude, pos.coords.longitude));
         map.setLevel(6);
+        updateMyLocationDot(pos.coords.latitude, pos.coords.longitude);
       },
       function () { /* 위치 거부/실패 - 기본 전국 화면 유지 */ },
       { timeout: 8000, maximumAge: 600000 }
+    );
+    // 이후 위치가 바뀌면(이동 중) 점 위치도 계속 갱신 - GPS로 내 위치 실시간 표시
+    navigator.geolocation.watchPosition(
+      function (pos) { updateMyLocationDot(pos.coords.latitude, pos.coords.longitude); },
+      function () {},
+      { maximumAge: 30000, timeout: 10000 }
     );
   }
 
@@ -512,10 +592,15 @@ kakao.maps.load(function () {
       "설치일: " + (item.installDate || "-") + "<br/>" +
       "승강기번호: " + item.id +
       (item.projectNo ? "<br/>PJT번호: " + item.projectNo : "") +
-      "<br/><span class=\"roadview-btn\" id=\"roadview-open-btn\">로드뷰 보기</span>";
+      "<br/><span class=\"roadview-btn\" id=\"roadview-open-btn\">로드뷰 보기</span> " +
+      "<span class=\"roadview-btn\" id=\"directions-btn\">길찾기</span>";
     content.querySelector(".close-btn").addEventListener("click", closeInfoWindow);
     content.querySelector("#roadview-open-btn").addEventListener("click", function () {
       showRoadview(marker.getPosition());
+    });
+    content.querySelector("#directions-btn").addEventListener("click", function () {
+      var url = "https://map.kakao.com/link/to/" + encodeURIComponent(item.name || "목적지") + "," + item.lat + "," + item.lng;
+      window.open(url, "_blank");
     });
     // 정보창 안에서의 클릭/드래그/더블클릭이 지도(드래그 선택, 더블클릭 확대 등)로
     // 전파되지 않도록 막아서, 정보창을 지도와 별도의 영역으로 취급되게 함
@@ -580,6 +665,20 @@ kakao.maps.load(function () {
     dashboardCollapsed = !dashboardCollapsed;
     document.getElementById("dashboard-body").classList.toggle("collapsed", dashboardCollapsed);
     document.getElementById("dashboard-arrow").textContent = dashboardCollapsed ? "▸" : "▾";
+  });
+
+  var rankingCollapsed = false;
+  document.getElementById("ranking-toggle").addEventListener("click", function () {
+    rankingCollapsed = !rankingCollapsed;
+    document.getElementById("ranking-body").classList.toggle("collapsed", rankingCollapsed);
+    document.getElementById("ranking-arrow").textContent = rankingCollapsed ? "▸" : "▾";
+  });
+
+  var panelCollapsed = false;
+  document.getElementById("panel-toggle").addEventListener("click", function () {
+    panelCollapsed = !panelCollapsed;
+    document.getElementById("panel-body").classList.toggle("collapsed", panelCollapsed);
+    this.textContent = panelCollapsed ? "▸" : "▾";
   });
 
   function updateDashboard(data) {
@@ -805,6 +904,53 @@ kakao.maps.load(function () {
     return tokens.join(" ");
   }
 
+  function goToRegion(region) {
+    var info = regionsManifest[region];
+    if (!info) return;
+    var pos = new kakao.maps.LatLng((info.minLat + info.maxLat) / 2, (info.minLng + info.maxLng) / 2);
+    map.setLevel(6, { anchor: pos, animate: true });
+    map.panTo(pos);
+  }
+
+  // 지역 랭킹 - regions_manifest.json 에 지역별로 이미 계산되어 있는 노후건수/업체별
+  // 건수(oldCount, mntCounts)만 가지고 만들기 때문에, 지도용 지역 데이터를 따로
+  // 불러올 필요 없이 매니페스트 로드 직후 바로 계산할 수 있다.
+  function renderRankings() {
+    if (!regionsManifest) return;
+    var regions = Object.keys(regionsManifest).map(function (region) {
+      var info = regionsManifest[region];
+      var mnt = info.mntCounts || {};
+      var hyundai = mnt["현대"] || 0;
+      var competitorShare = info.count > 0 ? (info.count - hyundai) / info.count * 100 : 0;
+      return {
+        region: region,
+        count: info.count,
+        oldCount: info.oldCount || 0,
+        competitorShare: competitorShare,
+      };
+    });
+
+    function renderList(elId, items, formatter) {
+      var el = document.getElementById(elId);
+      el.innerHTML = "";
+      items.forEach(function (r) {
+        var li = document.createElement("li");
+        li.textContent = displayRegionName(r.region) + " - " + formatter(r);
+        li.addEventListener("click", function () { goToRegion(r.region); });
+        el.appendChild(li);
+      });
+    }
+
+    var byOld = regions.slice().sort(function (a, b) { return b.oldCount - a.oldCount; }).slice(0, 10);
+    renderList("ranking-old", byOld, function (r) { return r.oldCount.toLocaleString() + "건"; });
+
+    // 표본이 너무 적은 지역은 비중이 0%나 100%로 튀어서 랭킹 의미가 없으므로 최소 20건 이상만 집계
+    var byCompetitor = regions.filter(function (r) { return r.count >= 20; })
+      .sort(function (a, b) { return b.competitorShare - a.competitorShare; })
+      .slice(0, 10);
+    renderList("ranking-competitor", byCompetitor, function (r) { return r.competitorShare.toFixed(1) + "%"; });
+  }
+
   function renderSummaryOverlays() {
     if (!regionsManifest) return;
     var bounds = map.getBounds();
@@ -889,6 +1035,7 @@ kakao.maps.load(function () {
       handleViewChange();
       kakao.maps.event.addListener(map, "idle", handleViewChange);
       loadSearchIndex(); // 지도 렌더링과 무관하게 백그라운드에서 미리 받아둠 (검색 시 대기시간 단축)
+      renderRankings();
     })
     .catch(function () {
       document.getElementById("search-status").textContent = "실데이터 없음 - 샘플 데이터로 표시";
