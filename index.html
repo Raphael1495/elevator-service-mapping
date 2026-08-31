@@ -157,6 +157,10 @@
         <div class="chip-row" id="mntcompany-filters"></div>
       </div>
       <div class="filter-group">
+        <h4>담당 지사(현대 직영건만 해당)</h4>
+        <div class="chip-row" id="team-filters"></div>
+      </div>
+      <div class="filter-group">
         <h4>노후 승강기</h4>
         <div class="chip-row">
           <label class="chip" id="old-only-chip">
@@ -414,6 +418,15 @@ kakao.maps.load(function () {
     activeMntCompany[g] = false;
   });
 
+  // 담당 지사(팀) - 회사 필터와 달리 목록이 고정값이 아니라 manifest를 받아봐야
+  // 알 수 있으므로(현대 관리대수 원본 기준 19개 지사), 매니페스트 로드 후 채워진다.
+  var TEAM_GROUPS = [];
+  var activeTeam = {};
+
+  function displayTeamName(team) {
+    return team ? team.replace(/\(서비스\)/g, "") : "미배정(타사 관리 등)";
+  }
+
   // 정밀안전검사 대상 기준(승강기안전관리법: 설치검사일로부터 15년 경과)
   var OLD_ELEVATOR_YEARS = 15;
   var activeOldOnly = false;
@@ -442,8 +455,10 @@ kakao.maps.load(function () {
     handleFilterChange();
   });
 
-  function buildFilterChips(containerId, activeMap) {
+  function buildFilterChips(containerId, activeMap, groups, labelFn) {
     var container = document.getElementById(containerId);
+    container.innerHTML = "";
+    labelFn = labelFn || function (g) { return g; };
     var groupInputs = [];
 
     var allLabel = document.createElement("label");
@@ -464,14 +479,14 @@ kakao.maps.load(function () {
     allInput.addEventListener("change", function () {
       groupInputs.forEach(function (input, i) {
         input.checked = allInput.checked;
-        activeMap[COMPANY_GROUPS[i]] = allInput.checked;
+        activeMap[groups[i]] = allInput.checked;
         input.parentElement.classList.toggle("active", allInput.checked);
       });
       allLabel.classList.toggle("active", allInput.checked);
       handleFilterChange();
     });
 
-    COMPANY_GROUPS.forEach(function (group) {
+    groups.forEach(function (group) {
       var label = document.createElement("label");
       label.className = "chip";
       var input = document.createElement("input");
@@ -484,13 +499,13 @@ kakao.maps.load(function () {
         handleFilterChange();
       });
       label.appendChild(input);
-      label.appendChild(document.createTextNode(group));
+      label.appendChild(document.createTextNode(labelFn(group)));
       container.appendChild(label);
       groupInputs.push(input);
     });
   }
-  buildFilterChips("manufacturer-filters", activeManufacturer);
-  buildFilterChips("mntcompany-filters", activeMntCompany);
+  buildFilterChips("manufacturer-filters", activeManufacturer, COMPANY_GROUPS);
+  buildFilterChips("mntcompany-filters", activeMntCompany, COMPANY_GROUPS);
   renderLegend();
 
   // 업체 그룹 분류(문자열 검색 여러 번)를 매번 다시 하지 않도록, 지역 데이터가
@@ -527,16 +542,17 @@ kakao.maps.load(function () {
 
   // 한 필터 행을 전부 꺼버리면 그 조건 자체를 무시(=제한 없음)한다.
   // 그래야 "유지보수업체는 그대로 두고 제조업체만 좁히기"가 서로 영향 없이 독립적으로 동작한다.
-  function facetPasses(activeMap, group) {
-    var anyChecked = COMPANY_GROUPS.some(function (g) { return activeMap[g]; });
+  function facetPasses(activeMap, groups, value) {
+    var anyChecked = groups.some(function (g) { return activeMap[g]; });
     if (!anyChecked) return true;
-    return !!activeMap[group];
+    return !!activeMap[value];
   }
 
   function getFiltered(items) {
     return items.filter(function (item) {
-      return facetPasses(activeManufacturer, item._mfgGroup) &&
-             facetPasses(activeMntCompany, item._mntGroup) &&
+      return facetPasses(activeManufacturer, COMPANY_GROUPS, item._mfgGroup) &&
+             facetPasses(activeMntCompany, COMPANY_GROUPS, item._mntGroup) &&
+             facetPasses(activeTeam, TEAM_GROUPS, item.team) &&
              (!activeOldOnly || isOldElevator(item));
     });
   }
@@ -614,6 +630,7 @@ kakao.maps.load(function () {
       "설치일: " + (item.installDate || "-") + "<br/>" +
       "승강기번호: " + item.id +
       (item.projectNo ? "<br/>PJT번호: " + item.projectNo : "") +
+      (item.team ? "<br/>담당지사: " + displayTeamName(item.team) : "") +
       "<br/><span class=\"roadview-btn\" id=\"roadview-open-btn\">로드뷰 보기</span> " +
       "<span class=\"roadview-btn\" id=\"directions-btn\">길찾기</span>";
     content.querySelector(".close-btn").addEventListener("click", closeInfoWindow);
@@ -801,7 +818,7 @@ kakao.maps.load(function () {
       alert("다운로드할 데이터가 없습니다. 지도를 확대해서 승강기가 표시된 상태에서 다시 시도해주세요.");
       return;
     }
-    var headers = ["건물명", "주소", "제조업체", "유지보수업체", "대수", "기종", "상태", "종류", "최초설치일", "설치일", "승강기번호", "PJT번호"];
+    var headers = ["건물명", "주소", "제조업체", "유지보수업체", "대수", "기종", "상태", "종류", "최초설치일", "설치일", "승강기번호", "PJT번호", "담당지사"];
     var rows = lastVisibleData.map(function (item) {
       return {
         "건물명": item.name, "주소": item.address,
@@ -810,6 +827,7 @@ kakao.maps.load(function () {
         "상태": item.status, "종류": item.kind,
         "최초설치일": item.firstInstallDate, "설치일": item.installDate,
         "승강기번호": item.id, "PJT번호": item.projectNo,
+        "담당지사": item.team ? displayTeamName(item.team) : "",
       };
     });
     var sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
@@ -1023,6 +1041,17 @@ kakao.maps.load(function () {
     if (activeOldOnly && info.count > 0) {
       total = Math.round(total * (info.oldCount || 0) / info.count);
     }
+    // 팀은 mfg/mnt와의 정확한 교차표까지는 안 두고, 지역 전체 대비 비율로 추정치만 반영
+    // (참고용 - 확대해서 상세 모드로 들어가면 정확한 값이 나옴)
+    var teamAnyChecked = TEAM_GROUPS.some(function (t) { return activeTeam[t]; });
+    if (teamAnyChecked && info.count > 0) {
+      var teamCounts = info.teamCounts || {};
+      var teamMatch = 0;
+      TEAM_GROUPS.forEach(function (t) {
+        if (activeTeam[t]) teamMatch += teamCounts[t] || 0;
+      });
+      total = Math.round(total * teamMatch / info.count);
+    }
     return total;
   }
 
@@ -1148,6 +1177,18 @@ kakao.maps.load(function () {
   loadData("./data/regions_manifest.json")
     .then(function (manifest) {
       regionsManifest = manifest;
+
+      // 팀(지사) 목록은 고정값이 아니라 데이터에서 나온 것이므로, manifest의
+      // teamCounts를 전부 합쳐서 실제 존재하는 지사 목록을 뽑아 필터 칩을 만든다.
+      var teamSet = {};
+      Object.keys(regionsManifest).forEach(function (region) {
+        var tc = regionsManifest[region].teamCounts || {};
+        Object.keys(tc).forEach(function (t) { teamSet[t] = true; });
+      });
+      TEAM_GROUPS = Object.keys(teamSet).sort();
+      TEAM_GROUPS.forEach(function (t) { activeTeam[t] = false; });
+      buildFilterChips("team-filters", activeTeam, TEAM_GROUPS, displayTeamName);
+
       handleViewChange();
       kakao.maps.event.addListener(map, "idle", handleViewChange);
       loadSearchIndex(); // 지도 렌더링과 무관하게 백그라운드에서 미리 받아둠 (검색 시 대기시간 단축)

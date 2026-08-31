@@ -15,7 +15,7 @@ from build_dataset import (
     count_units_by_address,
     load_addr_map,
     load_cache,
-    load_project_no_map,
+    load_hyundai_management_map,
     normalize_key,
     pad_elevator_no,
     pad_project_no,
@@ -31,9 +31,9 @@ def main():
 
     cache = load_cache()
     addr_map = load_addr_map()
-    project_map = load_project_no_map()
+    mgmt_map = load_hyundai_management_map()
     unit_counts = count_units_by_address(addr_map)
-    print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 프로젝트번호 매핑: {len(project_map)}건")
+    print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 현대 관리대수 매핑: {len(mgmt_map)}건")
 
     records = []
     with pyxlsb.open_workbook(DB_SOURCE) as wb:
@@ -53,6 +53,7 @@ def main():
                 if not coord:
                     continue
                 name = vals[idx["BULDNM"]]
+                mgmt = mgmt_map.get(eno)
                 records.append(
                     {
                         "승강기번호": pad_elevator_no(eno),
@@ -68,7 +69,8 @@ def main():
                         "종류": vals[idx["ELVTRKINDNM"]],
                         "최초설치일": vals[idx["FRSTINSTALLATIONDE"]],
                         "설치일": vals[idx["INSTALLATIONDE"]],
-                        "프로젝트번호": pad_project_no(project_map.get(eno)),
+                        "프로젝트번호": pad_project_no(mgmt["projectNo"]) if mgmt else None,
+                        "담당팀": mgmt["team"] if mgmt else None,
                     }
                 )
 

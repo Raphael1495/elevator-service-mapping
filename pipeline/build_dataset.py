@@ -188,10 +188,11 @@ def load_addr_map():
     return {normalize_key(k): v for k, v in zip(df["ELEVATORNO"], df["ADDRESS1"])}
 
 
-def load_project_no_map():
-    """현대엘리베이터 자체 관리대수(원본)에서 승강기번호 -> 원PJT(프로젝트번호) 매핑."""
+def load_hyundai_management_map():
+    """현대엘리베이터 자체 관리대수(원본)에서 승강기번호 -> {프로젝트번호, 담당팀} 매핑.
+    승강기번호가 없는 행(약 34건)은 조인할 수 없으니 그냥 버린다."""
     if not os.path.exists(MGMT_SOURCE):
-        print(f"경고: {MGMT_SOURCE} 없음 - 프로젝트번호 없이 진행")
+        print(f"경고: {MGMT_SOURCE} 없음 - 프로젝트번호/담당팀 없이 진행")
         return {}
     result = {}
     with pyxlsb.open_workbook(MGMT_SOURCE) as wb:
@@ -200,12 +201,18 @@ def load_project_no_map():
             header = [c.v for c in next(rows)]
             idx_eno = header.index("승강기번호")
             idx_pjt = header.index("원PJT")
+            idx_team = header.index("팀")
             for row in rows:
                 vals = [c.v for c in row]
                 eno = normalize_key(vals[idx_eno])
+                if not eno:
+                    continue
                 pjt = vals[idx_pjt]
-                if eno and pjt is not None:
-                    result[eno] = normalize_key(pjt)
+                team = vals[idx_team]
+                result[eno] = {
+                    "projectNo": normalize_key(pjt) if pjt is not None else None,
+                    "team": team.strip() if isinstance(team, str) and team.strip() else None,
+                }
     return result
 
 
@@ -214,9 +221,9 @@ def main():
 
     cache = load_cache()
     addr_map = load_addr_map()
-    project_map = load_project_no_map()
+    mgmt_map = load_hyundai_management_map()
     unit_counts = count_units_by_address(addr_map)
-    print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 프로젝트번호 매핑: {len(project_map)}건 / 고유 주소 종류: {len(unit_counts)}개")
+    print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 현대 관리대수 매핑: {len(mgmt_map)}건 / 고유 주소 종류: {len(unit_counts)}개")
 
     records = []
     skipped_no_addr = 0
@@ -241,6 +248,7 @@ def main():
                     skipped_no_coord += 1
                     continue
                 name = vals[idx["BULDNM"]]
+                mgmt = mgmt_map.get(eno)
                 records.append(
                     {
                         "id": pad_elevator_no(eno),
@@ -256,7 +264,8 @@ def main():
                         "kind": vals[idx["ELVTRKINDNM"]],
                         "firstInstallDate": vals[idx["FRSTINSTALLATIONDE"]],
                         "installDate": vals[idx["INSTALLATIONDE"]],
-                        "projectNo": pad_project_no(project_map.get(eno)),
+                        "projectNo": pad_project_no(mgmt["projectNo"]) if mgmt else None,
+                        "team": mgmt["team"] if mgmt else None,
                     }
                 )
 
@@ -278,11 +287,14 @@ def main():
         # 모든 조합을 지역 데이터 파일을 새로 불러오지 않고도 바로 계산 가능).
         cross_counts = defaultdict(lambda: defaultdict(int))
         mnt_counts = Counter()
+        team_counts = Counter()
         for it in items:
             mfg = classify_company(it["manufacturer"])
             mnt = classify_company(it["mntCompany"])
             cross_counts[mfg][mnt] += 1
             mnt_counts[mnt] += 1
+            if it["team"]:
+                team_counts[it["team"]] += 1
         manifest[region] = {
             "file": f"regions/{file_name}",
             "count": len(items),
@@ -293,6 +305,7 @@ def main():
             "oldCount": sum(1 for it in items if is_old(it["firstInstallDate"])),
             "mntCounts": dict(mnt_counts),
             "crossCounts": {mfg: dict(mnt_map) for mfg, mnt_map in cross_counts.items()},
+            "teamCounts": dict(team_counts),
         }
 
     with open(MANIFEST_FILE, "w", encoding="utf-8") as f:
