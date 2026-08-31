@@ -410,8 +410,8 @@ kakao.maps.load(function () {
   var activeManufacturer = {};
   var activeMntCompany = {};
   COMPANY_GROUPS.forEach(function (g) {
-    activeManufacturer[g] = true;
-    activeMntCompany[g] = true;
+    activeManufacturer[g] = false;
+    activeMntCompany[g] = false;
   });
 
   // 정밀안전검사 대상 기준(승강기안전관리법: 설치검사일로부터 15년 경과)
@@ -447,10 +447,10 @@ kakao.maps.load(function () {
     var groupInputs = [];
 
     var allLabel = document.createElement("label");
-    allLabel.className = "chip active";
+    allLabel.className = "chip";
     var allInput = document.createElement("input");
     allInput.type = "checkbox";
-    allInput.checked = true;
+    allInput.checked = false;
     allLabel.appendChild(allInput);
     allLabel.appendChild(document.createTextNode("전체"));
     container.appendChild(allLabel);
@@ -473,10 +473,10 @@ kakao.maps.load(function () {
 
     COMPANY_GROUPS.forEach(function (group) {
       var label = document.createElement("label");
-      label.className = "chip active";
+      label.className = "chip";
       var input = document.createElement("input");
       input.type = "checkbox";
-      input.checked = true;
+      input.checked = false;
       input.addEventListener("change", function () {
         activeMap[group] = input.checked;
         label.classList.toggle("active", input.checked);
