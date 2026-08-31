@@ -122,6 +122,15 @@
       <h4>유지보수업체 표시</h4>
       <div class="chip-row" id="mntcompany-filters"></div>
     </div>
+    <div class="filter-group">
+      <h4>노후 승강기</h4>
+      <div class="chip-row">
+        <label class="chip" id="old-only-chip">
+          <input type="checkbox" id="old-only-checkbox" />
+          15년 이상만 보기 (정밀안전검사 대상)
+        </label>
+      </div>
+    </div>
 
     <div id="dashboard">
       <h4 id="dashboard-toggle">유지보수업체 현황 <span class="arrow" id="dashboard-arrow">▾</span></h4>
@@ -322,6 +331,24 @@ kakao.maps.load(function () {
     activeMntCompany[g] = true;
   });
 
+  // 정밀안전검사 대상 기준(승강기안전관리법: 설치검사일로부터 15년 경과)
+  var OLD_ELEVATOR_YEARS = 15;
+  var activeOldOnly = false;
+
+  function isOldElevator(item) {
+    if (!item.firstInstallDate) return false;
+    var installed = new Date(item.firstInstallDate);
+    if (isNaN(installed.getTime())) return false;
+    var years = (new Date() - installed) / (1000 * 60 * 60 * 24 * 365.25);
+    return years >= OLD_ELEVATOR_YEARS;
+  }
+
+  document.getElementById("old-only-checkbox").addEventListener("change", function () {
+    activeOldOnly = this.checked;
+    document.getElementById("old-only-chip").classList.toggle("active", activeOldOnly);
+    refresh();
+  });
+
   function buildFilterChips(containerId, activeMap) {
     var container = document.getElementById(containerId);
     var groupInputs = [];
@@ -407,7 +434,8 @@ kakao.maps.load(function () {
 
   function getFiltered(items) {
     return items.filter(function (item) {
-      return activeManufacturer[item._mfgGroup] && activeMntCompany[item._mntGroup];
+      return activeManufacturer[item._mfgGroup] && activeMntCompany[item._mntGroup] &&
+             (!activeOldOnly || isOldElevator(item));
     });
   }
 
