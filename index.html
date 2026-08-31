@@ -525,9 +525,18 @@ kakao.maps.load(function () {
     return items;
   }
 
+  // 한 필터 행을 전부 꺼버리면 그 조건 자체를 무시(=제한 없음)한다.
+  // 그래야 "유지보수업체는 그대로 두고 제조업체만 좁히기"가 서로 영향 없이 독립적으로 동작한다.
+  function facetPasses(activeMap, group) {
+    var anyChecked = COMPANY_GROUPS.some(function (g) { return activeMap[g]; });
+    if (!anyChecked) return true;
+    return !!activeMap[group];
+  }
+
   function getFiltered(items) {
     return items.filter(function (item) {
-      return activeManufacturer[item._mfgGroup] && activeMntCompany[item._mntGroup] &&
+      return facetPasses(activeManufacturer, item._mfgGroup) &&
+             facetPasses(activeMntCompany, item._mntGroup) &&
              (!activeOldOnly || isOldElevator(item));
     });
   }
@@ -1001,12 +1010,14 @@ kakao.maps.load(function () {
   // 곱한 추정치를 쓴다 (참고용 - 확대해서 상세 모드로 들어가면 정확한 값이 나옴).
   function filteredRegionCount(info) {
     if (!info.crossCounts) return info.count;
+    var mfgAnyChecked = COMPANY_GROUPS.some(function (g) { return activeManufacturer[g]; });
+    var mntAnyChecked = COMPANY_GROUPS.some(function (g) { return activeMntCompany[g]; });
     var total = 0;
     Object.keys(info.crossCounts).forEach(function (mfg) {
-      if (!activeManufacturer[mfg]) return;
+      if (mfgAnyChecked && !activeManufacturer[mfg]) return;
       var mntMap = info.crossCounts[mfg];
       Object.keys(mntMap).forEach(function (mnt) {
-        if (activeMntCompany[mnt]) total += mntMap[mnt];
+        if (!mntAnyChecked || activeMntCompany[mnt]) total += mntMap[mnt];
       });
     });
     if (activeOldOnly && info.count > 0) {
