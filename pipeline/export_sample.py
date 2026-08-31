@@ -12,7 +12,7 @@ from build_dataset import (
     DB_SHEET,
     DB_SOURCE,
     NEEDED_COLUMNS,
-    count_units_by_building,
+    count_units_by_address,
     load_addr_map,
     load_cache,
     load_project_no_map,
@@ -32,7 +32,7 @@ def main():
     cache = load_cache()
     addr_map = load_addr_map()
     project_map = load_project_no_map()
-    unit_counts = count_units_by_building()
+    unit_counts = count_units_by_address(addr_map)
     print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 프로젝트번호 매핑: {len(project_map)}건")
 
     records = []
@@ -62,7 +62,7 @@ def main():
                         "주소": addr,
                         "제조업체": vals[idx["MANUFACTURERNAME"]],
                         "유지보수업체": vals[idx["MNTCPNYNM"]],
-                        "대수": unit_counts.get(name) if name else None,
+                        "대수": unit_counts.get(addr),
                         "기종": vals[idx["ELVTRMODEL"]],
                         "상태": vals[idx["ELVTRSTTS"]],
                         "종류": vals[idx["ELVTRKINDNM"]],

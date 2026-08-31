@@ -141,19 +141,11 @@ def is_old(first_install_date):
     return (date.today() - installed).days / 365.25 >= OLD_ELEVATOR_YEARS
 
 
-def count_units_by_building():
-    """건물명(BULDNM)이 같은 승강기번호 개수 - 국가DB 전체 기준(지오코딩 여부와 무관)."""
-    counts = Counter()
-    with pyxlsb.open_workbook(DB_SOURCE) as wb:
-        with wb.get_sheet(DB_SHEET) as sheet:
-            rows = sheet.rows()
-            header = [c.v for c in next(rows)]
-            idx_name = header.index("BULDNM")
-            for row in rows:
-                name = row[idx_name].v if idx_name < len(row) else None
-                if name:
-                    counts[name] += 1
-    return counts
+def count_units_by_address(addr_map):
+    """같은 주소에 설치된 승강기번호 개수 - 국가DB 전체 기준(지오코딩 여부와 무관).
+    건물명(BULDNM)은 "혜성빌딩"처럼 전국에 흔한 이름이 많아서 서로 다른 건물이
+    합쳐지는 문제가 있었음 -> 주소(사실상 유일한 건물 식별자) 기준으로 변경."""
+    return Counter(addr_map.values())
 
 
 def load_cache():
@@ -196,8 +188,8 @@ def main():
     cache = load_cache()
     addr_map = load_addr_map()
     project_map = load_project_no_map()
-    unit_counts = count_units_by_building()
-    print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 프로젝트번호 매핑: {len(project_map)}건 / 건물명 종류: {len(unit_counts)}개")
+    unit_counts = count_units_by_address(addr_map)
+    print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 프로젝트번호 매핑: {len(project_map)}건 / 고유 주소 종류: {len(unit_counts)}개")
 
     records = []
     skipped_no_addr = 0
@@ -231,7 +223,7 @@ def main():
                         "address": addr,
                         "manufacturer": vals[idx["MANUFACTURERNAME"]],
                         "mntCompany": vals[idx["MNTCPNYNM"]],
-                        "unitCount": unit_counts.get(name) if name else None,
+                        "unitCount": unit_counts.get(addr),
                         "model": vals[idx["ELVTRMODEL"]],
                         "status": vals[idx["ELVTRSTTS"]],
                         "kind": vals[idx["ELVTRKINDNM"]],
