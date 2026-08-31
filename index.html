@@ -599,7 +599,10 @@ kakao.maps.load(function () {
       showRoadview(marker.getPosition());
     });
     content.querySelector("#directions-btn").addEventListener("click", function () {
-      var url = "https://map.kakao.com/link/to/" + encodeURIComponent(item.name || "목적지") + "," + item.lat + "," + item.lng;
+      var destination = encodeURIComponent(item.name || "목적지") + "," + item.lat + "," + item.lng;
+      var url = myLocation
+        ? "https://map.kakao.com/link/from/" + encodeURIComponent("내 위치") + "," + myLocation.lat + "," + myLocation.lng + "/to/" + destination
+        : "https://map.kakao.com/link/to/" + destination;
       window.open(url, "_blank");
     });
     // 정보창 안에서의 클릭/드래그/더블클릭이 지도(드래그 선택, 더블클릭 확대 등)로
