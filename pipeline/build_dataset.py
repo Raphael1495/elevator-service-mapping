@@ -245,7 +245,17 @@ def main():
             json.dump(items, f, ensure_ascii=False)
         lats = [it["lat"] for it in items]
         lngs = [it["lng"] for it in items]
-        mnt_counts = Counter(classify_company(it["mntCompany"]) for it in items)
+        # 제조/유지보수 업체를 둘 다 조합해서 세어둔다. 요약 배지(전국/광역 보기)가
+        # 지금 켜진 필터 조합에 맞는 개수를 보여주려면 이 교차표가 있어야 한다
+        # (제조업체 하나만 껐을 때, 유지보수업체 하나만 껐을 때, 둘 다 껐을 때 등
+        # 모든 조합을 지역 데이터 파일을 새로 불러오지 않고도 바로 계산 가능).
+        cross_counts = defaultdict(lambda: defaultdict(int))
+        mnt_counts = Counter()
+        for it in items:
+            mfg = classify_company(it["manufacturer"])
+            mnt = classify_company(it["mntCompany"])
+            cross_counts[mfg][mnt] += 1
+            mnt_counts[mnt] += 1
         manifest[region] = {
             "file": f"regions/{file_name}",
             "count": len(items),
@@ -255,6 +265,7 @@ def main():
             "maxLng": max(lngs),
             "oldCount": sum(1 for it in items if is_old(it["firstInstallDate"])),
             "mntCounts": dict(mnt_counts),
+            "crossCounts": {mfg: dict(mnt_map) for mfg, mnt_map in cross_counts.items()},
         }
 
     with open(MANIFEST_FILE, "w", encoding="utf-8") as f:

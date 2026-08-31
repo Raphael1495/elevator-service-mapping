@@ -426,10 +426,20 @@ kakao.maps.load(function () {
     return years >= OLD_ELEVATOR_YEARS;
   }
 
+  // 필터가 바뀌면 지금 모드(상세/요약)에 맞는 화면을 다시 그린다. 요약 모드(축소 상태)에서
+  // 필터를 바꿔도 배지 숫자가 그대로였던 문제 - refresh()는 상세 모드에서만 의미가 있어서 생김.
+  function handleFilterChange() {
+    if (detailModeActive) {
+      refresh();
+    } else {
+      renderSummaryOverlays();
+    }
+  }
+
   document.getElementById("old-only-checkbox").addEventListener("change", function () {
     activeOldOnly = this.checked;
     document.getElementById("old-only-chip").classList.toggle("active", activeOldOnly);
-    refresh();
+    handleFilterChange();
   });
 
   function buildFilterChips(containerId, activeMap) {
@@ -458,7 +468,7 @@ kakao.maps.load(function () {
         input.parentElement.classList.toggle("active", allInput.checked);
       });
       allLabel.classList.toggle("active", allInput.checked);
-      refresh();
+      handleFilterChange();
     });
 
     COMPANY_GROUPS.forEach(function (group) {
@@ -471,7 +481,7 @@ kakao.maps.load(function () {
         activeMap[group] = input.checked;
         label.classList.toggle("active", input.checked);
         syncAllChip();
-        refresh();
+        handleFilterChange();
       });
       label.appendChild(input);
       label.appendChild(document.createTextNode(group));
@@ -985,6 +995,26 @@ kakao.maps.load(function () {
     renderList("ranking-competitor", byCompetitor, function (r) { return r.competitorShare.toFixed(1) + "%"; });
   }
 
+  // 요약 배지(전국/광역 보기)도 현재 켜진 필터 조합에 맞는 개수를 보여준다.
+  // 제조/보수 업체 조합은 crossCounts(교차표)로 정확히 계산되고, 노후 필터는
+  // 지역 데이터를 안 불러온 상태라 정확한 교차 계산이 안 되므로 노후 비율을
+  // 곱한 추정치를 쓴다 (참고용 - 확대해서 상세 모드로 들어가면 정확한 값이 나옴).
+  function filteredRegionCount(info) {
+    if (!info.crossCounts) return info.count;
+    var total = 0;
+    Object.keys(info.crossCounts).forEach(function (mfg) {
+      if (!activeManufacturer[mfg]) return;
+      var mntMap = info.crossCounts[mfg];
+      Object.keys(mntMap).forEach(function (mnt) {
+        if (activeMntCompany[mnt]) total += mntMap[mnt];
+      });
+    });
+    if (activeOldOnly && info.count > 0) {
+      total = Math.round(total * (info.oldCount || 0) / info.count);
+    }
+    return total;
+  }
+
   function renderSummaryOverlays() {
     if (!regionsManifest) return;
     var bounds = map.getBounds();
@@ -994,9 +1024,11 @@ kakao.maps.load(function () {
     Object.keys(regionsManifest).forEach(function (region) {
       var info = regionsManifest[region];
       if (!boundsOverlap(info, sw, ne)) return;
+      var count = filteredRegionCount(info);
+      if (count === 0) return;
       var el = document.createElement("div");
       el.className = "region-summary-badge";
-      el.textContent = displayRegionName(region) + " " + info.count.toLocaleString();
+      el.textContent = displayRegionName(region) + " " + count.toLocaleString();
       var overlay = new kakao.maps.CustomOverlay({
         position: new kakao.maps.LatLng((info.minLat + info.maxLat) / 2, (info.minLng + info.maxLng) / 2),
         content: el,
