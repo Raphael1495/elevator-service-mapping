@@ -148,7 +148,7 @@
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=05f3e6e2292430d167a08d5521dc5509&libraries=clusterer&autoload=false"></script>
 <script>
 kakao.maps.load(function () {
-  var COMPANY_GROUPS = ["오티스", "현대", "티케이", "미쓰비시", "기타"];
+  var COMPANY_GROUPS = ["현대", "오티스", "티케이", "미쓰비시", "기타"];
 
   function classifyCompany(name) {
     if (!name) return "기타";
@@ -560,11 +560,13 @@ kakao.maps.load(function () {
     data.forEach(function (item) {
       counts[item._mntGroup]++;
     });
+    var total = data.length;
     var table = document.getElementById("dashboard-table");
     table.innerHTML = "";
     COMPANY_GROUPS.forEach(function (g) {
+      var pct = total > 0 ? (counts[g] / total * 100).toFixed(1) : "0.0";
       var tr = document.createElement("tr");
-      tr.innerHTML = "<td>" + g + "</td><td class='count'>" + counts[g].toLocaleString() + "</td>";
+      tr.innerHTML = "<td>" + g + "</td><td class='count'>" + counts[g].toLocaleString() + " (" + pct + "%)</td>";
       table.appendChild(tr);
     });
     var totalTr = document.createElement("tr");
