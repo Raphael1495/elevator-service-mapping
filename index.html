@@ -427,8 +427,27 @@ kakao.maps.load(function () {
   var TEAM_GROUPS = [];
   var activeTeam = {};
 
+  // 지사 표시 순서 및 축약 이름 (요청하신 순서 그대로) - 이 목록에 없는 새 지사가
+  // 나중에 데이터에 추가되면 목록 맨 뒤에 원래 이름으로 붙는다(누락 방지).
+  var TEAM_ORDER = [
+    "ES서비스팀", "강북지사(서비스)", "강서지사(서비스)", "인천지사(서비스)",
+    "강남지사(서비스)", "분당지사(서비스)", "수원지사(서비스)", "강원지사(서비스)",
+    "대구지사(서비스)", "부산지사(서비스)", "울산지사(서비스)", "경남지사(서비스)",
+    "대전지사(서비스)", "충청지사(서비스)", "광주지사(서비스)", "전주지사(서비스)",
+    "제주지사(서비스)", "서울서비스",
+  ];
+  var TEAM_DISPLAY_NAMES = {
+    "ES서비스팀": "ES", "강북지사(서비스)": "강북", "강서지사(서비스)": "강서",
+    "인천지사(서비스)": "인천", "강남지사(서비스)": "강남", "분당지사(서비스)": "분당",
+    "수원지사(서비스)": "수원", "강원지사(서비스)": "강원", "대구지사(서비스)": "대구",
+    "부산지사(서비스)": "부산", "울산지사(서비스)": "울산", "경남지사(서비스)": "경남",
+    "대전지사(서비스)": "대전", "충청지사(서비스)": "충청", "광주지사(서비스)": "광주",
+    "전주지사(서비스)": "전주", "제주지사(서비스)": "제주", "서울서비스": "서울서비스",
+  };
+
   function displayTeamName(team) {
-    return team ? team.replace(/\(서비스\)/g, "") : "미배정(타사 관리 등)";
+    if (!team) return "미배정(타사 관리 등)";
+    return TEAM_DISPLAY_NAMES[team] || team;
   }
 
   // 정밀안전검사 대상 기준(승강기안전관리법: 설치검사일로부터 15년 경과)
@@ -634,7 +653,7 @@ kakao.maps.load(function () {
       "설치일: " + (item.installDate || "-") + "<br/>" +
       "승강기번호: " + item.id +
       (item.projectNo ? "<br/>PJT번호: " + item.projectNo : "") +
-      (item.team ? "<br/>담당지사: " + displayTeamName(item.team) : "") +
+      (item.team ? "<br/>지사명: " + displayTeamName(item.team) : "") +
       "<br/><span class=\"roadview-btn\" id=\"roadview-open-btn\">로드뷰 보기</span> " +
       "<span class=\"roadview-btn\" id=\"directions-btn\">길찾기</span>";
     content.querySelector(".close-btn").addEventListener("click", closeInfoWindow);
@@ -822,7 +841,7 @@ kakao.maps.load(function () {
       alert("다운로드할 데이터가 없습니다. 지도를 확대해서 승강기가 표시된 상태에서 다시 시도해주세요.");
       return;
     }
-    var headers = ["건물명", "주소", "제조업체", "유지보수업체", "대수", "기종", "상태", "종류", "최초설치일", "설치일", "승강기번호", "PJT번호", "담당지사"];
+    var headers = ["건물명", "주소", "제조업체", "유지보수업체", "대수", "기종", "상태", "종류", "최초설치일", "설치일", "승강기번호", "PJT번호", "지사명"];
     var rows = lastVisibleData.map(function (item) {
       return {
         "건물명": item.name, "주소": item.address,
@@ -831,7 +850,7 @@ kakao.maps.load(function () {
         "상태": item.status, "종류": item.kind,
         "최초설치일": item.firstInstallDate, "설치일": item.installDate,
         "승강기번호": item.id, "PJT번호": item.projectNo,
-        "담당지사": item.team ? displayTeamName(item.team) : "",
+        "지사명": item.team ? displayTeamName(item.team) : "",
       };
     });
     var sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
@@ -1189,7 +1208,10 @@ kakao.maps.load(function () {
         var tc = regionsManifest[region].teamCounts || {};
         Object.keys(tc).forEach(function (t) { teamSet[t] = true; });
       });
-      TEAM_GROUPS = Object.keys(teamSet).sort();
+      TEAM_GROUPS = TEAM_ORDER.filter(function (t) { return teamSet[t]; });
+      Object.keys(teamSet).forEach(function (t) {
+        if (TEAM_GROUPS.indexOf(t) === -1) TEAM_GROUPS.push(t); // 목록에 없는 새 지사는 뒤에 추가
+      });
       TEAM_GROUPS.forEach(function (t) { activeTeam[t] = false; });
       buildFilterChips("team-filters", activeTeam, TEAM_GROUPS, displayTeamName);
 
