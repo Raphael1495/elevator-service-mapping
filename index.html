@@ -18,7 +18,7 @@
     box-shadow: 0 1px 6px rgba(0,0,0,0.25); font-size: 13px; color: #222;
   }
 
-  #search-panel { width: 257px; padding: 12px; }
+  #search-panel { width: 270px; padding: 12px; }
   #search-panel .search-row { display: flex; gap: 6px; }
   #search-panel input[type="text"] {
     flex: 1; padding: 7px 8px; border: 1px solid #ccc; border-radius: 5px; font-size: 13px;
@@ -109,7 +109,7 @@
 <div class="overlay-row">
   <div id="search-panel" class="panel">
     <div class="search-row">
-      <input type="text" id="search-input" placeholder="승강기번호 / 현장명 / 프로젝트번호" />
+      <input type="text" id="search-input" placeholder="승강기번호 / 현장명 / PJT번호" />
       <button id="search-btn">검색</button>
     </div>
     <div id="search-status">데이터 로딩 중...</div>
@@ -478,11 +478,12 @@ kakao.maps.load(function () {
       (item.address || "") + "<br/>" +
       "제조: " + displayCompanyName(item.manufacturer) + " / 보수: " + displayCompanyName(item.mntCompany) + "<br/>" +
       "대수: " + (item.unitCount ? item.unitCount + "대" : "-") + "<br/>" +
+      "기종: " + (item.model || "-") + "<br/>" +
       "상태: " + (item.status || "-") + " / 종류: " + (item.kind || "-") + "<br/>" +
       "최초설치일: " + (item.firstInstallDate || "-") + "<br/>" +
       "설치일: " + (item.installDate || "-") + "<br/>" +
       "승강기번호: " + item.id +
-      (item.projectNo ? "<br/>프로젝트번호: " + item.projectNo : "") +
+      (item.projectNo ? "<br/>PJT번호: " + item.projectNo : "") +
       "<br/><span class=\"roadview-btn\" id=\"roadview-open-btn\">로드뷰 보기</span>";
     content.querySelector(".close-btn").addEventListener("click", closeInfoWindow);
     content.querySelector("#roadview-open-btn").addEventListener("click", function () {
@@ -763,6 +764,17 @@ kakao.maps.load(function () {
     summaryOverlays = [];
   }
 
+  // 지역 구분 키(region)는 강원특별자치도/전북특별자치도 같은 2023~24년 개칭 후
+  // 공식명칭을 그대로 쓰지만(파일명/조인 기준이라 바꾸면 안 됨), 지도 화면에
+  // 보여줄 때는 예전부터 익숙한 이름(강원도/전라북도)으로 표시한다.
+  var SIDO_DISPLAY_NAMES = { "강원특별자치도": "강원도", "전북특별자치도": "전라북도" };
+
+  function displayRegionName(region) {
+    var tokens = region.split(" ");
+    tokens[0] = SIDO_DISPLAY_NAMES[tokens[0]] || tokens[0];
+    return tokens.join(" ");
+  }
+
   function renderSummaryOverlays() {
     if (!regionsManifest) return;
     var bounds = map.getBounds();
@@ -774,7 +786,7 @@ kakao.maps.load(function () {
       if (!boundsOverlap(info, sw, ne)) return;
       var el = document.createElement("div");
       el.className = "region-summary-badge";
-      el.textContent = region + " " + info.count.toLocaleString();
+      el.textContent = displayRegionName(region) + " " + info.count.toLocaleString();
       var overlay = new kakao.maps.CustomOverlay({
         position: new kakao.maps.LatLng((info.minLat + info.maxLat) / 2, (info.minLng + info.maxLng) / 2),
         content: el,
@@ -812,7 +824,7 @@ kakao.maps.load(function () {
       return;
     }
 
-    document.getElementById("search-status").textContent = "지역 데이터 불러오는 중... (" + toLoad.join(", ") + ")";
+    document.getElementById("search-status").textContent = "지역 데이터 불러오는 중... (" + toLoad.map(displayRegionName).join(", ") + ")";
     Promise.all(
       toLoad.map(function (region) {
         return loadData("./data/" + regionsManifest[region].file).catch(function () { return []; });

@@ -38,6 +38,7 @@ NEEDED_COLUMNS = [
     "MNTCPNYNM",
     "ELVTRSTTS",
     "ELVTRKINDNM",
+    "ELVTRMODEL",
     "INSTALLATIONDE",
     "FRSTINSTALLATIONDE",
 ]
@@ -198,6 +199,7 @@ def main():
                         "manufacturer": vals[idx["MANUFACTURERNAME"]],
                         "mntCompany": vals[idx["MNTCPNYNM"]],
                         "unitCount": unit_counts.get(name) if name else None,
+                        "model": vals[idx["ELVTRMODEL"]],
                         "status": vals[idx["ELVTRSTTS"]],
                         "kind": vals[idx["ELVTRKINDNM"]],
                         "firstInstallDate": vals[idx["FRSTINSTALLATIONDE"]],

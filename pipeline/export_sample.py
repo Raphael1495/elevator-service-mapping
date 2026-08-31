@@ -63,6 +63,7 @@ def main():
                         "제조업체": vals[idx["MANUFACTURERNAME"]],
                         "유지보수업체": vals[idx["MNTCPNYNM"]],
                         "대수": unit_counts.get(name) if name else None,
+                        "기종": vals[idx["ELVTRMODEL"]],
                         "상태": vals[idx["ELVTRSTTS"]],
                         "종류": vals[idx["ELVTRKINDNM"]],
                         "최초설치일": vals[idx["FRSTINSTALLATIONDE"]],
