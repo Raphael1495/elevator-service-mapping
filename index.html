@@ -146,7 +146,7 @@
 
     <div id="panel-body">
       <div id="search-status">데이터 로딩 중...</div>
-      <span class="roadview-btn" id="export-csv-btn">현재 화면 목록 CSV 다운로드</span>
+      <span class="roadview-btn" id="export-csv-btn">현재 화면 목록 엑셀 다운로드</span>
 
       <div class="filter-group">
         <h4>제조업체 표시</h4>
@@ -205,6 +205,7 @@
 
 <div id="map"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=05f3e6e2292430d167a08d5521dc5509&libraries=clusterer&autoload=false"></script>
 <script>
 kakao.maps.load(function () {
@@ -776,39 +777,30 @@ kakao.maps.load(function () {
     updateDashboard(visible);
   }
 
-  function csvEscape(value) {
-    var s = value === null || value === undefined ? "" : String(value);
-    if (/[",\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
-    return s;
-  }
-
-  function exportVisibleToCsv() {
+  function exportVisibleToXlsx() {
     if (lastVisibleData.length === 0) {
       alert("다운로드할 데이터가 없습니다. 지도를 확대해서 승강기가 표시된 상태에서 다시 시도해주세요.");
       return;
     }
     var headers = ["건물명", "주소", "제조업체", "유지보수업체", "대수", "기종", "상태", "종류", "최초설치일", "설치일", "승강기번호", "PJT번호"];
     var rows = lastVisibleData.map(function (item) {
-      return [
-        item.name, item.address, item.manufacturer, item.mntCompany,
-        item.unitCount, item.model, item.status, item.kind,
-        item.firstInstallDate, item.installDate, item.id, item.projectNo,
-      ].map(csvEscape).join(",");
+      return {
+        "건물명": item.name, "주소": item.address,
+        "제조업체": item.manufacturer, "유지보수업체": item.mntCompany,
+        "대수": item.unitCount, "기종": item.model,
+        "상태": item.status, "종류": item.kind,
+        "최초설치일": item.firstInstallDate, "설치일": item.installDate,
+        "승강기번호": item.id, "PJT번호": item.projectNo,
+      };
     });
-    var csv = "﻿" + headers.join(",") + "\n" + rows.join("\n");
-    var blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
+    var sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+    var workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "승강기목록");
     var stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
-    a.href = url;
-    a.download = "승강기_목록_" + stamp + ".csv";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    XLSX.writeFile(workbook, "승강기_목록_" + stamp + ".xlsx");
   }
 
-  document.getElementById("export-csv-btn").addEventListener("click", exportVisibleToCsv);
+  document.getElementById("export-csv-btn").addEventListener("click", exportVisibleToXlsx);
 
   // 검색은 지도에 지금 로드된 지역과 무관하게 전체에서 찾을 수 있어야 하지만,
   // 그러자고 항상 전체 데이터를 들고 있으면 지도 성능 최적화가 무의미해지므로,
