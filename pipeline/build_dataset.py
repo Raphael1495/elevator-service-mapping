@@ -111,6 +111,15 @@ GU_TO_CITY = {
     "의창구": "창원시", "성산구": "창원시", "마산합포구": "창원시", "마산회원구": "창원시", "진해구": "창원시",
 }
 
+# 시-구 사이 띄어쓰기가 빠져 하나로 붙어버린 표기("부천시원미구" 등) 보정.
+# 부천시는 2016년에 구가 폐지되어 지금은 "부천시"만 쓰지만, 옛날식 표기가
+# 남아있는 주소가 일부 있어 별도의 엉뚱한 지역으로 떨어져 나갔음.
+SIGUNGU_ALIASES = {
+    "부천시원미구": "부천시",
+    "부천시소사구": "부천시",
+    "부천시오정구": "부천시",
+}
+
 
 def region_of(address):
     """주소의 '시/도 + 시/군/구' 두 토큰을 지역 구분 키로 사용 (시/도 하나로만 나누면
@@ -122,6 +131,7 @@ def region_of(address):
     if sido not in KNOWN_SIDO:
         return "기타"
     sigungu = tokens[1] if len(tokens) > 1 else ""
+    sigungu = SIGUNGU_ALIASES.get(sigungu, sigungu)
     sigungu = GU_TO_CITY.get(sigungu, sigungu)
     return (sido + " " + sigungu).strip()
 
