@@ -171,8 +171,16 @@ def is_old(first_install_date):
 def count_units_by_address(addr_map):
     """같은 주소에 설치된 승강기번호 개수 - 국가DB 전체 기준(지오코딩 여부와 무관).
     건물명(BULDNM)은 "혜성빌딩"처럼 전국에 흔한 이름이 많아서 서로 다른 건물이
-    합쳐지는 문제가 있었음 -> 주소(사실상 유일한 건물 식별자) 기준으로 변경."""
+    합쳐지는 문제가 있었음 -> 주소(사실상 유일한 건물 식별자) 기준으로 변경.
+    (참고용/export_sample.py 전용 - 실제 지도 데이터는 아래 count_units_by_address_and_name 사용)"""
     return Counter(addr_map.values())
+
+
+def count_units_by_address_and_name(pairs):
+    """같은 주소 + 같은 현장명(BULDNM)이어야 하나의 현장으로 묶어서 대수를 센다.
+    주소만으로 묶으면 한 주소에 여러 동/시설(현장명이 다른 경우)이 있을 때 실제로는
+    별개인 현장이 하나로 합쳐지는 문제가 있어, 현장명까지 같아야 같은 현장으로 취급."""
+    return Counter((addr, (name or "").strip()) for addr, name in pairs)
 
 
 def load_cache():
@@ -188,8 +196,23 @@ def load_addr_map():
     return {normalize_key(k): v for k, v in zip(df["ELEVATORNO"], df["ADDRESS1"])}
 
 
+MGMT_TYPE_COLUMN_CANDIDATES = ["직영/협력사", "직영협력사", "관리구분", "직영/협력"]
+
+
+def _find_column(header, candidates):
+    """정확히 일치하는 컬럼명을 먼저 찾고, 없으면 후보 키워드가 포함된 컬럼을 찾는다.
+    관리대수 원본 파일의 실제 컬럼명이 조금 다를 수 있어 유연하게 대응."""
+    for cand in candidates:
+        if cand in header:
+            return header.index(cand)
+    for i, h in enumerate(header):
+        if isinstance(h, str) and any(cand in h for cand in candidates):
+            return i
+    return None
+
+
 def load_hyundai_management_map():
-    """현대엘리베이터 자체 관리대수(원본)에서 승강기번호 -> {프로젝트번호, 담당팀} 매핑.
+    """현대엘리베이터 자체 관리대수(원본)에서 승강기번호 -> {프로젝트번호, 담당팀, 직영구분} 매핑.
     승강기번호가 없는 행(약 34건)은 조인할 수 없으니 그냥 버린다."""
     if not os.path.exists(MGMT_SOURCE):
         print(f"경고: {MGMT_SOURCE} 없음 - 프로젝트번호/담당팀 없이 진행")
@@ -202,6 +225,9 @@ def load_hyundai_management_map():
             idx_eno = header.index("승강기번호")
             idx_pjt = header.index("원PJT")
             idx_team = header.index("팀")
+            idx_mgmt_type = _find_column(header, MGMT_TYPE_COLUMN_CANDIDATES)
+            if idx_mgmt_type is None:
+                print("경고: 관리대수 원본에서 직영/협력사 구분 컬럼을 못 찾음 - 직영구분 없이 진행")
             for row in rows:
                 vals = [c.v for c in row]
                 eno = normalize_key(vals[idx_eno])
@@ -209,9 +235,11 @@ def load_hyundai_management_map():
                     continue
                 pjt = vals[idx_pjt]
                 team = vals[idx_team]
+                mgmt_type = vals[idx_mgmt_type] if idx_mgmt_type is not None else None
                 result[eno] = {
                     "projectNo": normalize_key(pjt) if pjt is not None else None,
                     "team": team.strip() if isinstance(team, str) and team.strip() else None,
+                    "mgmtType": mgmt_type.strip() if isinstance(mgmt_type, str) and mgmt_type.strip() else None,
                 }
     return result
 
@@ -222,20 +250,21 @@ def main():
     cache = load_cache()
     addr_map = load_addr_map()
     mgmt_map = load_hyundai_management_map()
-    unit_counts = count_units_by_address(addr_map)
-    print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 현대 관리대수 매핑: {len(mgmt_map)}건 / 고유 주소 종류: {len(unit_counts)}개")
+    print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 현대 관리대수 매핑: {len(mgmt_map)}건")
 
-    records = []
+    # 대수(unitCount)는 주소+현장명이 둘 다 같아야 같은 현장으로 묶어서 세야 하는데,
+    # 현장명(BULDNM)이 국가DB(DB_SOURCE)에만 있어서, 전체를 한 번 읽어 (승강기번호, 주소,
+    # 현장명, 원본값) 목록으로 모아둔 뒤 그 목록으로 카운트와 최종 레코드를 둘 다 만든다
+    # (xlsb를 두 번 읽지 않기 위함).
+    raw_rows = []
     skipped_no_addr = 0
-    skipped_no_coord = 0
-
     with pyxlsb.open_workbook(DB_SOURCE) as wb:
         with wb.get_sheet(DB_SHEET) as sheet:
             rows = sheet.rows()
             header = [c.v for c in next(rows)]
             idx = {name: header.index(name) for name in NEEDED_COLUMNS}
             for row in rows:
-                if limit is not None and len(records) >= limit:
+                if limit is not None and len(raw_rows) >= limit:
                     break
                 vals = [c.v for c in row]
                 eno = normalize_key(vals[idx["ELEVATORNO"]])
@@ -243,31 +272,40 @@ def main():
                 if not addr:
                     skipped_no_addr += 1
                     continue
-                coord = cache.get(addr)
-                if not coord:
-                    skipped_no_coord += 1
-                    continue
                 name = vals[idx["BULDNM"]]
-                mgmt = mgmt_map.get(eno)
-                records.append(
-                    {
-                        "id": pad_elevator_no(eno),
-                        "lat": coord["lat"],
-                        "lng": coord["lng"],
-                        "name": name,
-                        "address": addr,
-                        "manufacturer": vals[idx["MANUFACTURERNAME"]],
-                        "mntCompany": vals[idx["MNTCPNYNM"]],
-                        "unitCount": unit_counts.get(addr),
-                        "model": vals[idx["ELVTRMODEL"]],
-                        "status": vals[idx["ELVTRSTTS"]],
-                        "kind": vals[idx["ELVTRKINDNM"]],
-                        "firstInstallDate": vals[idx["FRSTINSTALLATIONDE"]],
-                        "installDate": vals[idx["INSTALLATIONDE"]],
-                        "projectNo": pad_project_no(mgmt["projectNo"]) if mgmt else None,
-                        "team": mgmt["team"] if mgmt else None,
-                    }
-                )
+                raw_rows.append((eno, addr, name, vals))
+
+    unit_counts = count_units_by_address_and_name((addr, name) for _, addr, name, _ in raw_rows)
+    print(f"고유 현장(주소+현장명) 종류: {len(unit_counts)}개")
+
+    records = []
+    skipped_no_coord = 0
+    for eno, addr, name, vals in raw_rows:
+        coord = cache.get(addr)
+        if not coord:
+            skipped_no_coord += 1
+            continue
+        mgmt = mgmt_map.get(eno)
+        records.append(
+            {
+                "id": pad_elevator_no(eno),
+                "lat": coord["lat"],
+                "lng": coord["lng"],
+                "name": name,
+                "address": addr,
+                "manufacturer": vals[idx["MANUFACTURERNAME"]],
+                "mntCompany": vals[idx["MNTCPNYNM"]],
+                "unitCount": unit_counts.get((addr, (name or "").strip())),
+                "model": vals[idx["ELVTRMODEL"]],
+                "status": vals[idx["ELVTRSTTS"]],
+                "kind": vals[idx["ELVTRKINDNM"]],
+                "firstInstallDate": vals[idx["FRSTINSTALLATIONDE"]],
+                "installDate": vals[idx["INSTALLATIONDE"]],
+                "projectNo": pad_project_no(mgmt["projectNo"]) if mgmt else None,
+                "team": mgmt["team"] if mgmt else None,
+                "mgmtType": mgmt["mgmtType"] if mgmt else None,
+            }
+        )
 
     by_region = defaultdict(list)
     for r in records:
@@ -288,6 +326,7 @@ def main():
         cross_counts = defaultdict(lambda: defaultdict(int))
         mnt_counts = Counter()
         team_counts = Counter()
+        mgmt_type_counts = Counter()
         for it in items:
             mfg = classify_company(it["manufacturer"])
             mnt = classify_company(it["mntCompany"])
@@ -295,6 +334,8 @@ def main():
             mnt_counts[mnt] += 1
             if it["team"]:
                 team_counts[it["team"]] += 1
+            if it["mgmtType"]:
+                mgmt_type_counts[it["mgmtType"]] += 1
         manifest[region] = {
             "file": f"regions/{file_name}",
             "count": len(items),
@@ -305,6 +346,7 @@ def main():
             "oldCount": sum(1 for it in items if is_old(it["firstInstallDate"])),
             "mntCounts": dict(mnt_counts),
             "crossCounts": {mfg: dict(mnt_map) for mfg, mnt_map in cross_counts.items()},
+            "mgmtTypeCounts": dict(mgmt_type_counts),
             "teamCounts": dict(team_counts),
         }
 

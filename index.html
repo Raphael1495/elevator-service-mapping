@@ -161,8 +161,12 @@
         <div class="chip-row" id="mntcompany-filters"></div>
       </div>
       <div class="filter-group">
-        <h4>담당 지사(현대 직영건만 해당)</h4>
+        <h4>지사(현대 직영건만 해당)</h4>
         <div class="chip-row" id="team-filters"></div>
+      </div>
+      <div class="filter-group" id="mgmttype-filter-group" style="display:none; margin-left:8px;">
+        <h4>└ 직영구분</h4>
+        <div class="chip-row" id="mgmttype-filters"></div>
       </div>
       <div class="filter-group">
         <h4>노후 승강기</h4>
@@ -450,6 +454,16 @@ kakao.maps.load(function () {
     return TEAM_DISPLAY_NAMES[team] || team;
   }
 
+  // 직영구분(직영/협력/자회사) - 지사와 마찬가지로 현대 직영건에만 있는 정보라,
+  // 지사를 하나도 안 골랐을 땐 의미가 없으므로 지사를 고를 때만 필터를 보여준다.
+  var MGMT_TYPE_ORDER = ["직영", "협력사", "자회사"];
+  var MGMT_TYPE_GROUPS = [];
+  var activeMgmtType = {};
+  var MGMT_TYPE_DISPLAY_NAMES = { "협력사": "협력" };
+  function displayMgmtType(t) {
+    return MGMT_TYPE_DISPLAY_NAMES[t] || t;
+  }
+
   // 정밀안전검사 대상 기준(승강기안전관리법: 설치검사일로부터 15년 경과)
   var OLD_ELEVATOR_YEARS = 15;
   var activeOldOnly = false;
@@ -472,13 +486,21 @@ kakao.maps.load(function () {
     }
   }
 
+  // 지사를 하나라도 선택했을 때만 직영구분 필터를 보여준다(선택 안 했을 땐 숨겨서
+  // 평소 화면 공간을 차지하지 않게 함).
+  function updateMgmtTypeVisibility() {
+    var anyTeam = TEAM_GROUPS.some(function (t) { return activeTeam[t]; });
+    var group = document.getElementById("mgmttype-filter-group");
+    if (group) group.style.display = anyTeam ? "" : "none";
+  }
+
   document.getElementById("old-only-checkbox").addEventListener("change", function () {
     activeOldOnly = this.checked;
     document.getElementById("old-only-chip").classList.toggle("active", activeOldOnly);
     handleFilterChange();
   });
 
-  function buildFilterChips(containerId, activeMap, groups, labelFn) {
+  function buildFilterChips(containerId, activeMap, groups, labelFn, onChange) {
     var container = document.getElementById(containerId);
     container.innerHTML = "";
     labelFn = labelFn || function (g) { return g; };
@@ -507,6 +529,7 @@ kakao.maps.load(function () {
       });
       allLabel.classList.toggle("active", allInput.checked);
       handleFilterChange();
+      if (onChange) onChange();
     });
 
     groups.forEach(function (group) {
@@ -520,6 +543,7 @@ kakao.maps.load(function () {
         label.classList.toggle("active", input.checked);
         syncAllChip();
         handleFilterChange();
+        if (onChange) onChange();
       });
       label.appendChild(input);
       label.appendChild(document.createTextNode(labelFn(group)));
@@ -576,6 +600,7 @@ kakao.maps.load(function () {
       return facetPasses(activeManufacturer, COMPANY_GROUPS, item._mfgGroup) &&
              facetPasses(activeMntCompany, COMPANY_GROUPS, item._mntGroup) &&
              facetPasses(activeTeam, TEAM_GROUPS, item.team) &&
+             facetPasses(activeMgmtType, MGMT_TYPE_GROUPS, item.mgmtType) &&
              (!activeOldOnly || isOldElevator(item));
     });
   }
@@ -654,6 +679,7 @@ kakao.maps.load(function () {
       "승강기번호: " + item.id +
       (item.projectNo ? "<br/>PJT번호: " + item.projectNo : "") +
       (item.team ? "<br/>지사명: " + displayTeamName(item.team) : "") +
+      (item.mgmtType ? "<br/>직영구분: " + displayMgmtType(item.mgmtType) : "") +
       "<br/><span class=\"roadview-btn\" id=\"roadview-open-btn\">로드뷰 보기</span> " +
       "<span class=\"roadview-btn\" id=\"directions-btn\">길찾기</span>";
     content.querySelector(".close-btn").addEventListener("click", closeInfoWindow);
@@ -841,7 +867,7 @@ kakao.maps.load(function () {
       alert("다운로드할 데이터가 없습니다. 지도를 확대해서 승강기가 표시된 상태에서 다시 시도해주세요.");
       return;
     }
-    var headers = ["건물명", "주소", "제조업체", "유지보수업체", "대수", "기종", "상태", "종류", "최초설치일", "설치일", "승강기번호", "PJT번호", "지사명"];
+    var headers = ["건물명", "주소", "제조업체", "유지보수업체", "대수", "기종", "상태", "종류", "최초설치일", "설치일", "승강기번호", "PJT번호", "지사명", "직영구분"];
     var rows = lastVisibleData.map(function (item) {
       return {
         "건물명": item.name, "주소": item.address,
@@ -851,6 +877,7 @@ kakao.maps.load(function () {
         "최초설치일": item.firstInstallDate, "설치일": item.installDate,
         "승강기번호": item.id, "PJT번호": item.projectNo,
         "지사명": item.team ? displayTeamName(item.team) : "",
+        "직영구분": item.mgmtType ? displayMgmtType(item.mgmtType) : "",
       };
     });
     var sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
@@ -1092,6 +1119,16 @@ kakao.maps.load(function () {
       });
       total = Math.round(total * teamMatch / info.count);
     }
+    // 직영구분도 팀과 같은 방식(지역 전체 대비 비율)으로 추정치만 반영
+    var mgmtTypeAnyChecked = MGMT_TYPE_GROUPS.some(function (t) { return activeMgmtType[t]; });
+    if (mgmtTypeAnyChecked && info.count > 0) {
+      var mgmtTypeCounts = info.mgmtTypeCounts || {};
+      var mgmtTypeMatch = 0;
+      MGMT_TYPE_GROUPS.forEach(function (t) {
+        if (activeMgmtType[t]) mgmtTypeMatch += mgmtTypeCounts[t] || 0;
+      });
+      total = Math.round(total * mgmtTypeMatch / info.count);
+    }
     return total;
   }
 
@@ -1221,16 +1258,28 @@ kakao.maps.load(function () {
       // 팀(지사) 목록은 고정값이 아니라 데이터에서 나온 것이므로, manifest의
       // teamCounts를 전부 합쳐서 실제 존재하는 지사 목록을 뽑아 필터 칩을 만든다.
       var teamSet = {};
+      var mgmtTypeSet = {};
       Object.keys(regionsManifest).forEach(function (region) {
         var tc = regionsManifest[region].teamCounts || {};
         Object.keys(tc).forEach(function (t) { teamSet[t] = true; });
+        var mc = regionsManifest[region].mgmtTypeCounts || {};
+        Object.keys(mc).forEach(function (t) { mgmtTypeSet[t] = true; });
       });
       TEAM_GROUPS = TEAM_ORDER.filter(function (t) { return teamSet[t]; });
       Object.keys(teamSet).forEach(function (t) {
         if (TEAM_GROUPS.indexOf(t) === -1) TEAM_GROUPS.push(t); // 목록에 없는 새 지사는 뒤에 추가
       });
       TEAM_GROUPS.forEach(function (t) { activeTeam[t] = false; });
-      buildFilterChips("team-filters", activeTeam, TEAM_GROUPS, displayTeamName);
+
+      MGMT_TYPE_GROUPS = MGMT_TYPE_ORDER.filter(function (t) { return mgmtTypeSet[t]; });
+      Object.keys(mgmtTypeSet).forEach(function (t) {
+        if (MGMT_TYPE_GROUPS.indexOf(t) === -1) MGMT_TYPE_GROUPS.push(t);
+      });
+      MGMT_TYPE_GROUPS.forEach(function (t) { activeMgmtType[t] = false; });
+
+      buildFilterChips("mgmttype-filters", activeMgmtType, MGMT_TYPE_GROUPS, displayMgmtType);
+      buildFilterChips("team-filters", activeTeam, TEAM_GROUPS, displayTeamName, updateMgmtTypeVisibility);
+      updateMgmtTypeVisibility();
 
       handleViewChange();
       kakao.maps.event.addListener(map, "idle", handleViewChange);
