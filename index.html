@@ -456,7 +456,11 @@ kakao.maps.load(function () {
 
   // 직영구분(직영/협력/자회사) - 지사와 마찬가지로 현대 직영건에만 있는 정보라,
   // 지사를 하나도 안 골랐을 땐 의미가 없으므로 지사를 고를 때만 필터를 보여준다.
-  var MGMT_TYPE_ORDER = ["직영", "협력사", "자회사"];
+  // "자회사"는 실제로는 서울서비스 지사 전체(45,832건)를 의미하는 값이라, 지사와
+  // 완전히 겹치는 정보임 - 다른 지사에는 자회사 건이 전혀 없음. 지사를 이미 고르면
+  // 알 수 있는 정보를 직영구분에서 또 고르게 하면 혼란스러우므로 필터 옵션에서는 뺀다
+  // (정보창/엑셀 내보내기에는 계속 표시).
+  var MGMT_TYPE_ORDER = ["직영", "협력사"];
   var MGMT_TYPE_GROUPS = [];
   var activeMgmtType = {};
   var MGMT_TYPE_DISPLAY_NAMES = { "협력사": "협력" };
@@ -1271,10 +1275,9 @@ kakao.maps.load(function () {
       });
       TEAM_GROUPS.forEach(function (t) { activeTeam[t] = false; });
 
+      // 팀(TEAM_GROUPS)과 달리 목록에 없는 값(자회사)을 자동으로 뒤에 붙이지 않는다 -
+      // 자회사는 의도적으로 필터에서 뺀 값이라, 새로 나타나도 그대로 숨겨야 함.
       MGMT_TYPE_GROUPS = MGMT_TYPE_ORDER.filter(function (t) { return mgmtTypeSet[t]; });
-      Object.keys(mgmtTypeSet).forEach(function (t) {
-        if (MGMT_TYPE_GROUPS.indexOf(t) === -1) MGMT_TYPE_GROUPS.push(t);
-      });
       MGMT_TYPE_GROUPS.forEach(function (t) { activeMgmtType[t] = false; });
 
       buildFilterChips("mgmttype-filters", activeMgmtType, MGMT_TYPE_GROUPS, displayMgmtType);
