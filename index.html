@@ -776,25 +776,52 @@ kakao.maps.load(function () {
     this.textContent = panelCollapsed ? "▸" : "▾";
   });
 
+  function renderDashboardTable(counts, total) {
+    var table = document.getElementById("dashboard-table");
+    table.innerHTML = "";
+    COMPANY_GROUPS.forEach(function (g) {
+      var c = counts[g] || 0;
+      var pct = total > 0 ? (c / total * 100).toFixed(1) : "0.0";
+      var tr = document.createElement("tr");
+      tr.innerHTML = "<td>" + g + "</td><td class='count'>" + c.toLocaleString() + " (" + pct + "%)</td>";
+      table.appendChild(tr);
+    });
+    var totalTr = document.createElement("tr");
+    totalTr.className = "total";
+    totalTr.innerHTML = "<td>합계</td><td class='count'>" + total.toLocaleString() + "</td>";
+    table.appendChild(totalTr);
+  }
+
+  // 상세 모드 - 실제로 화면에 뜬 개별 항목을 그대로 세어서 정확한 값
   function updateDashboard(data) {
     var counts = {};
     COMPANY_GROUPS.forEach(function (g) { counts[g] = 0; });
     data.forEach(function (item) {
       counts[item._mntGroup]++;
     });
-    var total = data.length;
-    var table = document.getElementById("dashboard-table");
-    table.innerHTML = "";
-    COMPANY_GROUPS.forEach(function (g) {
-      var pct = total > 0 ? (counts[g] / total * 100).toFixed(1) : "0.0";
-      var tr = document.createElement("tr");
-      tr.innerHTML = "<td>" + g + "</td><td class='count'>" + counts[g].toLocaleString() + " (" + pct + "%)</td>";
-      table.appendChild(tr);
+    renderDashboardTable(counts, data.length);
+  }
+
+  // 요약(전국/광역) 모드 - 개별 항목을 안 불러온 상태라, 화면에 걸치는 지역들의
+  // manifest 집계(crossCounts 등)를 합산해서 보여준다. filteredRegionCount/배지가
+  // 쓰는 것과 같은 방식이라 배지 합계와 대시보드 합계가 서로 일치한다.
+  function updateDashboardFromManifest() {
+    if (!regionsManifest) return;
+    var bounds = map.getBounds();
+    var sw = bounds.getSouthWest();
+    var ne = bounds.getNorthEast();
+    var totals = {};
+    COMPANY_GROUPS.forEach(function (g) { totals[g] = 0; });
+    Object.keys(regionsManifest).forEach(function (region) {
+      var info = regionsManifest[region];
+      if (!boundsOverlap(info, sw, ne)) return;
+      var ratio = computeRegionRatio(info);
+      var breakdown = filteredRegionMntBreakdown(info);
+      COMPANY_GROUPS.forEach(function (g) { totals[g] += breakdown[g] * ratio; });
     });
-    var totalTr = document.createElement("tr");
-    totalTr.className = "total";
-    totalTr.innerHTML = "<td>합계</td><td class='count'>" + data.length.toLocaleString() + "</td>";
-    table.appendChild(totalTr);
+    var total = 0;
+    COMPANY_GROUPS.forEach(function (g) { totals[g] = Math.round(totals[g]); total += totals[g]; });
+    renderDashboardTable(totals, total);
   }
 
   var currentMarkers = [];
@@ -1109,26 +1136,14 @@ kakao.maps.load(function () {
   }
 
   // 요약 배지(전국/광역 보기)도 현재 켜진 필터 조합에 맞는 개수를 보여준다.
-  // 제조/보수 업체 조합은 crossCounts(교차표)로 정확히 계산되고, 노후 필터는
-  // 지역 데이터를 안 불러온 상태라 정확한 교차 계산이 안 되므로 노후 비율을
-  // 곱한 추정치를 쓴다 (참고용 - 확대해서 상세 모드로 들어가면 정확한 값이 나옴).
-  function filteredRegionCount(info) {
-    if (!info.crossCounts) return info.count;
-    var mfgAnyChecked = COMPANY_GROUPS.some(function (g) { return activeManufacturer[g]; });
-    var mntAnyChecked = COMPANY_GROUPS.some(function (g) { return activeMntCompany[g]; });
-    var total = 0;
-    Object.keys(info.crossCounts).forEach(function (mfg) {
-      if (mfgAnyChecked && !activeManufacturer[mfg]) return;
-      var mntMap = info.crossCounts[mfg];
-      Object.keys(mntMap).forEach(function (mnt) {
-        if (!mntAnyChecked || activeMntCompany[mnt]) total += mntMap[mnt];
-      });
-    });
+  // 제조/보수 업체 조합은 crossCounts(교차표)로 정확히 계산되고, 노후/팀/직영구분은
+  // 지역 데이터를 안 불러온 상태라 정확한 교차 계산이 안 되므로 지역 전체 대비
+  // 비율을 곱한 추정치를 쓴다 (참고용 - 확대해서 상세 모드로 들어가면 정확한 값이 나옴).
+  function computeRegionRatio(info) {
+    var ratio = 1;
     if (activeOldOnly && info.count > 0) {
-      total = Math.round(total * (info.oldCount || 0) / info.count);
+      ratio *= (info.oldCount || 0) / info.count;
     }
-    // 팀은 mfg/mnt와의 정확한 교차표까지는 안 두고, 지역 전체 대비 비율로 추정치만 반영
-    // (참고용 - 확대해서 상세 모드로 들어가면 정확한 값이 나옴)
     var teamAnyChecked = TEAM_GROUPS.some(function (t) { return activeTeam[t]; });
     if (teamAnyChecked && info.count > 0) {
       var teamCounts = info.teamCounts || {};
@@ -1136,9 +1151,8 @@ kakao.maps.load(function () {
       TEAM_GROUPS.forEach(function (t) {
         if (activeTeam[t]) teamMatch += teamCounts[t] || 0;
       });
-      total = Math.round(total * teamMatch / info.count);
+      ratio *= teamMatch / info.count;
     }
-    // 직영구분도 팀과 같은 방식(지역 전체 대비 비율)으로 추정치만 반영
     var mgmtTypeAnyChecked = MGMT_TYPE_GROUPS.some(function (t) { return activeMgmtType[t]; });
     if (mgmtTypeAnyChecked && info.count > 0) {
       var mgmtTypeCounts = info.mgmtTypeCounts || {};
@@ -1146,9 +1160,34 @@ kakao.maps.load(function () {
       MGMT_TYPE_GROUPS.forEach(function (t) {
         if (activeMgmtType[t]) mgmtTypeMatch += mgmtTypeCounts[t] || 0;
       });
-      total = Math.round(total * mgmtTypeMatch / info.count);
+      ratio *= mgmtTypeMatch / info.count;
     }
-    return total;
+    return ratio;
+  }
+
+  // 제조업체/유지보수업체 필터에 맞는 유지보수업체별 건수(노후/팀/직영구분 비율 적용 전) -
+  // crossCounts 교차표를 그대로 쓰므로 이 부분은 정확한 값.
+  function filteredRegionMntBreakdown(info) {
+    var result = {};
+    COMPANY_GROUPS.forEach(function (g) { result[g] = 0; });
+    if (!info.crossCounts) return result;
+    var mfgAnyChecked = COMPANY_GROUPS.some(function (g) { return activeManufacturer[g]; });
+    var mntAnyChecked = COMPANY_GROUPS.some(function (g) { return activeMntCompany[g]; });
+    Object.keys(info.crossCounts).forEach(function (mfg) {
+      if (mfgAnyChecked && !activeManufacturer[mfg]) return;
+      var mntMap = info.crossCounts[mfg];
+      Object.keys(mntMap).forEach(function (mnt) {
+        if (!mntAnyChecked || activeMntCompany[mnt]) result[mnt] = (result[mnt] || 0) + mntMap[mnt];
+      });
+    });
+    return result;
+  }
+
+  function filteredRegionCount(info) {
+    if (!info.crossCounts) return info.count;
+    var breakdown = filteredRegionMntBreakdown(info);
+    var total = COMPANY_GROUPS.reduce(function (sum, g) { return sum + breakdown[g]; }, 0);
+    return Math.round(total * computeRegionRatio(info));
   }
 
   // 서울 근교처럼 시/군/구가 촘촘하게 붙어 있는 곳은 지역마다 배지를 하나씩
@@ -1214,6 +1253,7 @@ kakao.maps.load(function () {
     });
 
     document.getElementById("search-status").textContent = "하나의 화면에 최대 " + DENSITY_LIMIT.toLocaleString() + "개의 승강기만 표시됩니다.";
+    updateDashboardFromManifest();
   }
 
   function clearDetailMarkers() {
