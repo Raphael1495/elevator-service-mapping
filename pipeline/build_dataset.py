@@ -356,14 +356,24 @@ def main():
     # 지도 데이터(지역 파일)는 화면에 걸치는 지역만 불러오지만, 검색은 지금 화면과
     # 무관하게 전체에서 찾을 수 있어야 하므로 훨씬 가벼운 검색 전용 색인을 따로 만든다.
     # (좌표/주소/제조업체 등은 빼고 검색에 필요한 필드만 배열로 - 용량을 최소화)
-    search_index = [
-        [r["id"], r["name"], r["projectNo"], region_of(r["address"])] for r in records
+    #
+    # 지역명(379종)과 현장명(26만여 종)은 레코드 수(87만+)에 비해 종류가 훨씬 적어
+    # 매번 문자열을 반복 저장하면 낭비가 크다(용량의 절반 이상). 고유값을 별도
+    # 테이블로 빼고 각 레코드에는 인덱스 번호만 저장 -> 61MB대에서 33MB대로 감소.
+    region_names = sorted(by_region.keys())
+    region_index = {r: i for i, r in enumerate(region_names)}
+    name_values = sorted({r["name"] for r in records}, key=lambda x: (x is None, x))
+    name_index = {n: i for i, n in enumerate(name_values)}
+
+    search_items = [
+        [r["id"], name_index[r["name"]], r["projectNo"], region_index[region_of(r["address"])]]
+        for r in records
     ]
     with open(SEARCH_INDEX_FILE, "w", encoding="utf-8") as f:
-        json.dump(search_index, f, ensure_ascii=False)
+        json.dump({"regions": region_names, "names": name_values, "items": search_items}, f, ensure_ascii=False)
 
     print(f"완료: {len(records)}건 -> {len(by_region)}개 지역 파일 + {MANIFEST_FILE}")
-    print(f"검색 색인: {len(search_index)}건 -> {SEARCH_INDEX_FILE}")
+    print(f"검색 색인: {len(search_items)}건 (지역 {len(region_names)}종, 현장명 {len(name_values)}종) -> {SEARCH_INDEX_FILE}")
     for region, info in sorted(manifest.items(), key=lambda x: -x[1]["count"]):
         print(f"  {region}: {info['count']}건")
     print(f"주소 매핑 없음(스킵): {skipped_no_addr}건")

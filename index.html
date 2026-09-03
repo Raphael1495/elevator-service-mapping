@@ -898,12 +898,21 @@ kakao.maps.load(function () {
   // 검색 전용 경량 색인(id/현장명/프로젝트번호/지역만 있는 작은 파일)을 따로 두고
   // 실제로 검색을 시도할 때 딱 한 번만 불러온다 (평소 지도 탐색 속도엔 영향 없음).
   var searchIndex = null;
+  var searchIndexRegions = null;
+  var searchIndexNames = null;
   var searchIndexPromise = null;
 
+  // 검색 색인 파일은 지역명/현장명을 매번 반복 저장하지 않고, 고유값 테이블
+  // (regions/names) + 인덱스 번호(items)로 압축돼 있다 - 용량 절감을 위함.
   function loadSearchIndex() {
     if (!searchIndexPromise) {
-      searchIndexPromise = loadData("./data/search_index.json").catch(function () { return []; });
-      searchIndexPromise.then(function (data) { searchIndex = data; });
+      searchIndexPromise = loadData("./data/search_index.json").catch(function () { return { regions: [], names: [], items: [] }; });
+      searchIndexPromise = searchIndexPromise.then(function (data) {
+        searchIndexRegions = data.regions || [];
+        searchIndexNames = data.names || [];
+        searchIndex = data.items || [];
+        return searchIndex;
+      });
     }
     return searchIndexPromise;
   }
@@ -916,12 +925,18 @@ kakao.maps.load(function () {
     return match;
   }
 
-  // 색인 항목은 [id, name, projectNo, region] 배열 형태
+  // 색인 항목은 [id, nameIndex, projectNo, regionIndex] 배열 형태 - name/region
+  // 실제 문자열은 searchIndexNames/searchIndexRegions 테이블에서 찾아야 한다.
   function matchIndexEntries(index, digits, qLower) {
     var match = [];
     if (digits.length === 7) match = index.filter(function (e) { return e[0] === digits; });
     else if (digits.length === 6) match = index.filter(function (e) { return String(e[2]) === digits; });
-    if (match.length === 0) match = index.filter(function (e) { return e[1] && e[1].toLowerCase().indexOf(qLower) !== -1; });
+    if (match.length === 0) {
+      match = index.filter(function (e) {
+        var name = searchIndexNames[e[1]];
+        return name && name.toLowerCase().indexOf(qLower) !== -1;
+      });
+    }
     return match;
   }
 
@@ -967,7 +982,7 @@ kakao.maps.load(function () {
         statusEl.textContent = "검색 결과 없음: " + q;
         return;
       }
-      var region = idxMatch[0][3];
+      var region = searchIndexRegions[idxMatch[0][3]];
       var ensure = regionData[region]
         ? Promise.resolve()
         : loadData("./data/" + (regionsManifest[region] ? regionsManifest[region].file : ""))
