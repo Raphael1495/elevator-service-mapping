@@ -779,7 +779,13 @@ kakao.maps.load(function () {
   function renderDashboardTable(counts, total) {
     var table = document.getElementById("dashboard-table");
     table.innerHTML = "";
-    COMPANY_GROUPS.forEach(function (g) {
+    // 건수 내림차순으로 정렬하되, "기타"는 건수와 무관하게 항상 맨 밑에 온다.
+    var sorted = COMPANY_GROUPS.slice().sort(function (a, b) {
+      if (a === "기타") return 1;
+      if (b === "기타") return -1;
+      return (counts[b] || 0) - (counts[a] || 0);
+    });
+    sorted.forEach(function (g) {
       var c = counts[g] || 0;
       var pct = total > 0 ? (c / total * 100).toFixed(1) : "0.0";
       var tr = document.createElement("tr");
