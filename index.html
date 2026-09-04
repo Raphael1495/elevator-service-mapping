@@ -656,7 +656,10 @@ kakao.maps.load(function () {
     }
     function scheduleSettle() {
       if (settleTimer) clearTimeout(settleTimer);
-      settleTimer = setTimeout(settle, 150);
+      // idle 이후에도 loadRegionsInView가 지역 데이터를 네트워크로 더 불러오는
+      // 중일 수 있어(그 완료 후에야 refresh()가 실행됨), 너무 짧으면 그 사이에
+      // 자동 닫기가 풀려버린다 - 넉넉하게 잡아둔다.
+      settleTimer = setTimeout(settle, 600);
     }
     function onIdle() { scheduleSettle(); }
     kakao.maps.event.addListener(map, "idle", onIdle);
@@ -1160,6 +1163,13 @@ kakao.maps.load(function () {
         : loadData("./data/" + (regionsManifest[region] ? regionsManifest[region].file : ""))
             .then(function (items) { regionData[region] = attachGroups(items, region); })
             .catch(function () {});
+      // loadRegionsInView()가 별도로 loadedRegions로 로드 여부를 추적하는데,
+      // 검색은 그걸 거치지 않고 직접 불러와서 여기서도 표시해둬야 한다. 안
+      // 그러면 검색 이동으로 확대(zoom)돼서 idle이 뜰 때 loadRegionsInView가
+      // "아직 안 불러온 지역"으로 착각해 같은 지역을 또 한 번 불러오고, 그
+      // 완료 시점이 정보창 자동닫기 억제 구간(focusAndOpen)보다 늦게 끝나면서
+      // 정보창이 뒤늦게 닫혀버리는 문제가 있었다.
+      loadedRegions[region] = true;
       ensure.then(function () {
         var full = (regionData[region] || []).filter(function (item) { return item.id === idxMatch[0][0]; })[0];
         if (!full) {
