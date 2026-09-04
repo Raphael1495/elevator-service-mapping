@@ -35,9 +35,10 @@ DETAILS_DIR = os.path.join(BASE_DIR, "data", "details")
 
 # 상세정보(정보창의 "상세정보" 버튼) 전용 필드. 지도 마커용 지역 데이터에 그대로
 # 넣으면 88만여 건 전체에 필드 5개가 반복돼 용량이 크게 늘어나므로, 별도의
-# 지연로딩 파일(data/details/{지역}.json)로 분리한다. 아직 전국 반영 전이라
-# 파일럿(제주도)만 생성 - 전국 확장 시 이 값을 None으로 바꾸면 된다.
-DETAIL_PILOT_REGIONS = {"제주특별자치도 제주시", "제주특별자치도 서귀포시"}
+# 지연로딩 파일(data/details/{지역}.json)로 분리한다. 제주도 파일럿 검증 후
+# 전국 확장(예상 총 용량 약 90MB, 지역별로 잘게 나뉘어 있어 개별 파일 크기는
+# 문제 없음).
+DETAIL_PILOT_REGIONS = None
 
 NEEDED_COLUMNS = [
     "ELEVATORNO",
