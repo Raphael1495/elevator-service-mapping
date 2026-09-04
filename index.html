@@ -769,11 +769,17 @@ kakao.maps.load(function () {
     overlay.setPosition(marker.getPosition());
     overlay.setMap(map);
     openMarker = marker;
+
+    // 정보창은 마커를 새로 열 때마다 내용을 통째로 새로 그리기 때문에, 이전
+    // 마커에서 상세정보를 펼쳐둔 상태였다면(연속으로 여러 현장을 확인하는 흐름)
+    // 그 상태를 이어받아 새 현장의 상세정보도 자동으로 펼쳐서 보여준다.
+    if (detailPanelOpen) toggleDetailPanel(content, item);
   }
 
   function closeInfoWindow() {
     overlay.setMap(null);
     openMarker = null;
+    detailPanelOpen = false;
   }
 
   // 상세정보 - 마커/지역 데이터와 별도 파일(용량 절감을 위해 지연로딩)이라
@@ -794,12 +800,18 @@ kakao.maps.load(function () {
     return detailDataPromises[region];
   }
 
+  // 상세정보 패널이 지금 펼쳐져 있는지 - openInfoWindow가 다음 현장을 열 때도
+  // 이 상태를 이어받아 자동으로 펼쳐주기 위해 기억해둔다.
+  var detailPanelOpen = false;
+
   function toggleDetailPanel(infoWindowEl, item) {
     var existing = infoWindowEl.querySelector(".detail-panel");
     if (existing) {
       existing.remove();
+      detailPanelOpen = false;
       return;
     }
+    detailPanelOpen = true;
     var panel = document.createElement("div");
     panel.className = "detail-panel";
     panel.innerHTML = "<div class=\"detail-panel-header\">상세정보</div><div class=\"detail-panel-body\">불러오는 중...</div>";
