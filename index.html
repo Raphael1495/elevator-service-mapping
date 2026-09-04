@@ -102,6 +102,20 @@
   }
   .info-window .close-btn:hover { color: #333; }
 
+  .detail-panel {
+    position: absolute; top: 0; left: 100%; margin-left: 8px;
+    width: 460px; max-width: 80vw; max-height: 320px; overflow: auto;
+    background: #fff; border: 1px solid #ccc; border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    padding: 10px; font-size: 11px; line-height: 1.4;
+  }
+  .detail-panel-header { font-weight: bold; font-size: 13px; margin-bottom: 6px; }
+  .detail-table { border-collapse: collapse; width: 100%; }
+  .detail-table th, .detail-table td {
+    border: 1px solid #ddd; padding: 3px 5px; text-align: center; white-space: nowrap;
+  }
+  .detail-table th { background: #f5f5f5; }
+
   #legend { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
   #legend .legend-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #555; margin-bottom: 3px; }
   #legend .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
@@ -561,10 +575,11 @@ kakao.maps.load(function () {
 
   // 업체 그룹 분류(문자열 검색 여러 번)를 매번 다시 하지 않도록, 지역 데이터가
   // 들어올 때 딱 한 번만 계산해서 항목에 붙여둔다.
-  function attachGroups(items) {
+  function attachGroups(items, region) {
     items.forEach(function (item) {
       item._mfgGroup = classifyCompany(item.manufacturer);
       item._mntGroup = classifyCompany(item.mntCompany);
+      item._region = region;
     });
     return items;
   }
@@ -685,7 +700,8 @@ kakao.maps.load(function () {
       (item.team ? "<br/>지사명: " + displayTeamName(item.team) : "") +
       (item.mgmtType ? "<br/>직영구분: " + displayMgmtType(item.mgmtType) : "") +
       "<br/><span class=\"roadview-btn\" id=\"roadview-open-btn\">로드뷰 보기</span> " +
-      "<span class=\"roadview-btn\" id=\"directions-btn\">길찾기</span>";
+      "<span class=\"roadview-btn\" id=\"directions-btn\">길찾기</span> " +
+      "<span class=\"roadview-btn\" id=\"detail-info-btn\">상세정보</span>";
     content.querySelector(".close-btn").addEventListener("click", closeInfoWindow);
     content.querySelector("#roadview-open-btn").addEventListener("click", function () {
       showRoadview(marker.getPosition());
@@ -696,6 +712,9 @@ kakao.maps.load(function () {
         ? "https://map.kakao.com/link/from/" + encodeURIComponent("내 위치") + "," + myLocation.lat + "," + myLocation.lng + "/to/" + destination
         : "https://map.kakao.com/link/to/" + destination;
       window.open(url, "_blank");
+    });
+    content.querySelector("#detail-info-btn").addEventListener("click", function () {
+      toggleDetailPanel(content, item);
     });
     // 정보창 안에서의 클릭/드래그/더블클릭이 지도(드래그 선택, 더블클릭 확대 등)로
     // 전파되지 않도록 막아서, 정보창을 지도와 별도의 영역으로 취급되게 함
@@ -712,6 +731,70 @@ kakao.maps.load(function () {
   function closeInfoWindow() {
     overlay.setMap(null);
     openMarker = null;
+  }
+
+  // 상세정보 - 마커/지역 데이터와 별도 파일(용량 절감을 위해 지연로딩)이라
+  // 지역별로 한 번만 받아서 캐싱해둔다. 아직 없는 지역(파일럿 미대상)은
+  // 404가 나므로 조용히 null로 처리한다.
+  var detailDataPromises = {};
+  function loadRegionDetailData(region) {
+    if (!region) return Promise.resolve(null);
+    if (!detailDataPromises[region]) {
+      detailDataPromises[region] = loadData("./data/details/" + region + ".json")
+        .then(function (rows) {
+          var map = {};
+          rows.forEach(function (row) { map[row[0]] = row; });
+          return map;
+        })
+        .catch(function () { return null; });
+    }
+    return detailDataPromises[region];
+  }
+
+  function toggleDetailPanel(infoWindowEl, item) {
+    var existing = infoWindowEl.querySelector(".detail-panel");
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    var panel = document.createElement("div");
+    panel.className = "detail-panel";
+    panel.innerHTML = "<div class=\"detail-panel-header\">상세정보</div><div class=\"detail-panel-body\">불러오는 중...</div>";
+    infoWindowEl.appendChild(panel);
+
+    loadRegionDetailData(item._region).then(function (detailMap) {
+      // 패널이 그 사이에 닫혔으면(다른 마커 클릭 등) 더 이상 처리하지 않음
+      if (!panel.isConnected) return;
+      var body = panel.querySelector(".detail-panel-body");
+      if (!detailMap) {
+        body.textContent = "이 지역은 아직 상세정보 데이터가 없습니다.";
+        return;
+      }
+      // 같은 주소+현장명으로 묶인(대수 집계와 동일 기준) 승강기들을 전부 모은다.
+      var siblings = (regionData[item._region] || []).filter(function (it) {
+        return it.address === item.address && (it.name || "") === (item.name || "");
+      });
+      if (siblings.indexOf(item) === -1) siblings.push(item);
+
+      var html = "<table class=\"detail-table\"><thead><tr>" +
+        "<th>승강기번호</th><th>건물정보</th><th>구분</th><th>TM</th><th>용도</th><th>인승</th><th>속도</th><th>정지층수</th>" +
+        "</tr></thead><tbody>";
+      siblings.forEach(function (it) {
+        var d = detailMap[it.id];
+        html += "<tr>" +
+          "<td>" + it.id + "</td>" +
+          "<td>" + (d && d[1] ? d[1] : "-") + "</td>" +
+          "<td>" + (d && d[2] ? d[2] : "-") + "</td>" +
+          "<td>" + (d && d[3] ? d[3] : "-") + "</td>" +
+          "<td>" + (it.kind || "-") + "</td>" +
+          "<td>" + (d && d[4] ? d[4] : "-") + "</td>" +
+          "<td>" + (d && d[5] ? d[5] : "-") + "</td>" +
+          "<td>" + (d && d[6] != null ? d[6] : "-") + "</td>" +
+          "</tr>";
+      });
+      html += "</tbody></table>";
+      body.innerHTML = html;
+    });
   }
 
   // 로드뷰 - 컨테이너가 화면에 보이는 상태에서 최초 생성해야 크기가 제대로 잡히므로,
@@ -1019,7 +1102,7 @@ kakao.maps.load(function () {
       var ensure = regionData[region]
         ? Promise.resolve()
         : loadData("./data/" + (regionsManifest[region] ? regionsManifest[region].file : ""))
-            .then(function (items) { regionData[region] = attachGroups(items); })
+            .then(function (items) { regionData[region] = attachGroups(items, region); })
             .catch(function () {});
       ensure.then(function () {
         var full = (regionData[region] || []).filter(function (item) { return item.id === idxMatch[0][0]; })[0];
@@ -1293,7 +1376,7 @@ kakao.maps.load(function () {
         return loadData("./data/" + regionsManifest[region].file).catch(function () { return []; });
       })
     ).then(function (results) {
-      results.forEach(function (items, i) { regionData[toLoad[i]] = attachGroups(items); });
+      results.forEach(function (items, i) { regionData[toLoad[i]] = attachGroups(items, toLoad[i]); });
       refresh();
     });
   }

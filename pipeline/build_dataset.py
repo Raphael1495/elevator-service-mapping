@@ -31,6 +31,13 @@ MGMT_SHEET = "download"
 REGIONS_DIR = os.path.join(BASE_DIR, "data", "regions")
 MANIFEST_FILE = os.path.join(BASE_DIR, "data", "regions_manifest.json")
 SEARCH_INDEX_FILE = os.path.join(BASE_DIR, "data", "search_index.json")
+DETAILS_DIR = os.path.join(BASE_DIR, "data", "details")
+
+# 상세정보(정보창의 "상세정보" 버튼) 전용 필드. 지도 마커용 지역 데이터에 그대로
+# 넣으면 88만여 건 전체에 필드 5개가 반복돼 용량이 크게 늘어나므로, 별도의
+# 지연로딩 파일(data/details/{지역}.json)로 분리한다. 아직 전국 반영 전이라
+# 파일럿(제주도)만 생성 - 전국 확장 시 이 값을 None으로 바꾸면 된다.
+DETAIL_PILOT_REGIONS = {"제주특별자치도 제주시", "제주특별자치도 서귀포시"}
 
 NEEDED_COLUMNS = [
     "ELEVATORNO",
@@ -42,6 +49,12 @@ NEEDED_COLUMNS = [
     "ELVTRMODEL",
     "INSTALLATIONDE",
     "FRSTINSTALLATIONDE",
+    "BULDPRPOS",
+    "ELVTRDIVNM",
+    "ELVTRFORMNM",
+    "RATEDCAP",
+    "RATEDSPEED",
+    "SHUTTLEFLOORCNT",
 ]
 
 
@@ -279,6 +292,7 @@ def main():
     print(f"고유 현장(주소+현장명) 종류: {len(unit_counts)}개")
 
     records = []
+    detail_by_region = defaultdict(list)
     skipped_no_coord = 0
     for eno, addr, name, vals in raw_rows:
         coord = cache.get(addr)
@@ -286,9 +300,10 @@ def main():
             skipped_no_coord += 1
             continue
         mgmt = mgmt_map.get(eno)
+        padded_id = pad_elevator_no(eno)
         records.append(
             {
-                "id": pad_elevator_no(eno),
+                "id": padded_id,
                 "lat": coord["lat"],
                 "lng": coord["lng"],
                 "name": name,
@@ -306,6 +321,20 @@ def main():
                 "mgmtType": mgmt["mgmtType"] if mgmt else None,
             }
         )
+
+        region = region_of(addr)
+        if DETAIL_PILOT_REGIONS is None or region in DETAIL_PILOT_REGIONS:
+            detail_by_region[region].append(
+                [
+                    padded_id,
+                    vals[idx["BULDPRPOS"]],
+                    vals[idx["ELVTRDIVNM"]],
+                    vals[idx["ELVTRFORMNM"]],
+                    vals[idx["RATEDCAP"]],
+                    vals[idx["RATEDSPEED"]],
+                    vals[idx["SHUTTLEFLOORCNT"]],
+                ]
+            )
 
     by_region = defaultdict(list)
     for r in records:
@@ -352,6 +381,17 @@ def main():
 
     with open(MANIFEST_FILE, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False)
+
+    # 정보창 "상세정보" 버튼 전용 데이터 - [승강기번호, 건물정보, 구분, TM, 인승, 속도,
+    # 정지층수] 압축 배열. 지도 마커 데이터와 분리된 파일이라 버튼을 누른 사람만
+    # 필요할 때 딱 그 지역 파일만 받는다(평소 지도 탐색 속도에는 영향 없음).
+    os.makedirs(DETAILS_DIR, exist_ok=True)
+    for region, rows in detail_by_region.items():
+        with open(os.path.join(DETAILS_DIR, f"{region}.json"), "w", encoding="utf-8") as f:
+            json.dump(rows, f, ensure_ascii=False)
+    if detail_by_region:
+        pilot_desc = "전체" if DETAIL_PILOT_REGIONS is None else ", ".join(sorted(detail_by_region.keys()))
+        print(f"상세정보 파일: {len(detail_by_region)}개 지역 ({pilot_desc})")
 
     # 지도 데이터(지역 파일)는 화면에 걸치는 지역만 불러오지만, 검색은 지금 화면과
     # 무관하게 전체에서 찾을 수 있어야 하므로 훨씬 가벼운 검색 전용 색인을 따로 만든다.
