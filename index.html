@@ -426,8 +426,10 @@ kakao.maps.load(function () {
   // 실측 결과 카카오맵 축척눈금이 "2km"로 보이는 지점이 레벨 8 -> 레벨 8까지는 개별 마커, 레벨 9부터 클러스터링
   var clusterer = new kakao.maps.MarkerClusterer({ map: map, averageCenter: true, minLevel: 9 });
   // 카카오 InfoWindow는 내용 길이에 따라 박스 높이를 잘못 계산해 잘리는 경우가 있어
-  // 대신 CustomOverlay + 직접 스타일링한 div로 내용 길이에 맞춰 자동으로 커지게 처리
-  var overlay = new kakao.maps.CustomOverlay({ yAnchor: 1.15, zIndex: 2 });
+  // 대신 CustomOverlay + 직접 스타일링한 div로 내용 길이에 맞춰 자동으로 커지게 처리.
+  // zIndex를 크게 잡아서 클러스터 숫자 배지(다른 마커들)보다 항상 위에 뜨게 함 -
+  // 안 그러면 정보창/상세정보 표 위로 클러스터 숫자가 겹쳐 보이는 문제가 있었음.
+  var overlay = new kakao.maps.CustomOverlay({ yAnchor: 1.15, zIndex: 100 });
 
   kakao.maps.event.addListener(map, "click", function () {
     closeInfoWindow();
@@ -744,9 +746,11 @@ kakao.maps.load(function () {
     content.querySelector("#detail-info-btn").addEventListener("click", function () {
       toggleDetailPanel(content, item);
     });
-    // 정보창 안에서의 클릭/드래그/더블클릭이 지도(드래그 선택, 더블클릭 확대 등)로
-    // 전파되지 않도록 막아서, 정보창을 지도와 별도의 영역으로 취급되게 함
-    ["mousedown", "touchstart", "click", "dblclick"].forEach(function (evt) {
+    // 정보창 안에서의 클릭/드래그/더블클릭/휠 스크롤이 지도(드래그 선택, 더블클릭
+    // 확대, 휠 줌 등)로 전파되지 않도록 막아서, 정보창(+상세정보 표)을 지도와
+    // 별도의 영역으로 취급되게 함 - wheel이 빠져있으면 상세정보 표 위에서
+    // 스크롤할 때 표 대신 지도가 확대/축소돼버림.
+    ["mousedown", "touchstart", "click", "dblclick", "wheel"].forEach(function (evt) {
       content.addEventListener(evt, function (e) { e.stopPropagation(); });
     });
 
