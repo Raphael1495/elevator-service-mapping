@@ -195,6 +195,15 @@
           </label>
         </div>
       </div>
+      <div class="filter-group">
+        <h4>지도 표시</h4>
+        <div class="chip-row">
+          <label class="chip active" id="district-boundary-chip">
+            <input type="checkbox" id="district-boundary-checkbox" checked />
+            시군구 경계선 표시
+          </label>
+        </div>
+      </div>
 
       <div id="dashboard">
         <h4 id="dashboard-toggle">유지보수업체 현황 <span class="arrow" id="dashboard-arrow">▾</span></h4>
@@ -363,6 +372,7 @@ kakao.maps.load(function () {
   var districtBoundaries = []; // {path, bbox, polygon(생성 전엔 null)}
   var DISTRICT_ZOOM_THRESHOLD = 5; // 이 레벨보다 축소되면(숫자가 커지면) 얇게
   var DISTRICT_STROKE_COLOR = "#2563EB";
+  var showDistrictBoundaries = true; // 끄면 지도가 덜 복잡해 보이도록 토글 가능
 
   function districtStrokeWeight(level) {
     return level <= DISTRICT_ZOOM_THRESHOLD ? 3 : 1;
@@ -397,6 +407,15 @@ kakao.maps.load(function () {
   }
 
   function updateVisibleDistrictBoundaries() {
+    if (!showDistrictBoundaries) {
+      districtBoundaries.forEach(function (piece) {
+        if (piece.polygon) {
+          piece.polygon.setMap(null);
+          piece.polygon = null;
+        }
+      });
+      return;
+    }
     var bounds = map.getBounds();
     var sw = bounds.getSouthWest();
     var ne = bounds.getNorthEast();
@@ -522,6 +541,12 @@ kakao.maps.load(function () {
     activeOldOnly = this.checked;
     document.getElementById("old-only-chip").classList.toggle("active", activeOldOnly);
     handleFilterChange();
+  });
+
+  document.getElementById("district-boundary-checkbox").addEventListener("change", function () {
+    showDistrictBoundaries = this.checked;
+    document.getElementById("district-boundary-chip").classList.toggle("active", showDistrictBoundaries);
+    updateVisibleDistrictBoundaries();
   });
 
   function buildFilterChips(containerId, activeMap, groups, labelFn, onChange) {
