@@ -1418,12 +1418,21 @@ kakao.maps.load(function () {
     var center = map.getCenter();
     var lat = center.getLat();
     var lng = center.getLng();
+    // 인접한 구끼리는 경계 사각형(bbox)이 겹칠 수 있어서(예: 강남구/서초구),
+    // 겹치는 후보가 여러 개면 그중 중심점이 화면 중앙에 가장 가까운 구를 고른다.
     var matchedRegion = null;
+    var matchedDist = Infinity;
     TERRITORY_PILOT_REGIONS.forEach(function (region) {
       var info = regionsManifest[region];
-      if (!info || matchedRegion) return;
+      if (!info) return;
       if (lat >= info.minLat && lat <= info.maxLat && lng >= info.minLng && lng <= info.maxLng) {
-        matchedRegion = region;
+        var cLat = (info.minLat + info.maxLat) / 2;
+        var cLng = (info.minLng + info.maxLng) / 2;
+        var dist = (lat - cLat) * (lat - cLat) + (lng - cLng) * (lng - cLng);
+        if (dist < matchedDist) {
+          matchedDist = dist;
+          matchedRegion = region;
+        }
       }
     });
     if (matchedRegion === currentTerritoryRegion) return;
