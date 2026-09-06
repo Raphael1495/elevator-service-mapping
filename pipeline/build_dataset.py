@@ -32,6 +32,16 @@ REGIONS_DIR = os.path.join(BASE_DIR, "data", "regions")
 MANIFEST_FILE = os.path.join(BASE_DIR, "data", "regions_manifest.json")
 SEARCH_INDEX_FILE = os.path.join(BASE_DIR, "data", "search_index.json")
 DETAILS_DIR = os.path.join(BASE_DIR, "data", "details")
+TERRITORY_FILE = os.path.join(BASE_DIR, "data", "territory_companies.json")
+
+# "업체 영역 보기" 기능 - 구(지역) 안에서 유의미하게 활동 중인 업체 목록.
+# 대형 4사는 지사 상관없이 통합해서 하나로, 나머지(기타)는 원본 업체명 그대로
+# 개별 집계 후 상위 N개만(노이즈 방지로 최소 대수 조건도 같이 검) 남긴다.
+# 강남구/서초구 파일럿 검증 후 전국 확장 예정.
+TERRITORY_PILOT_REGIONS = {"서울특별시 강남구", "서울특별시 서초구"}
+TERRITORY_TOP_ETC = 7
+TERRITORY_MIN_COUNT = 10
+TERRITORY_PLACEHOLDER_NAMES = {"보수안함", "자체보수"}
 
 # 상세정보(정보창의 "상세정보" 버튼) 전용 필드. 지도 마커용 지역 데이터에 그대로
 # 넣으면 88만여 건 전체에 필드 5개가 반복돼 용량이 크게 늘어나므로, 별도의
@@ -343,6 +353,7 @@ def main():
 
     os.makedirs(REGIONS_DIR, exist_ok=True)
     manifest = {}
+    territory_data = {}
     for region, items in by_region.items():
         file_name = f"{region}.json"
         with open(os.path.join(REGIONS_DIR, file_name), "w", encoding="utf-8") as f:
@@ -380,8 +391,35 @@ def main():
             "teamCounts": dict(team_counts),
         }
 
+        if region in TERRITORY_PILOT_REGIONS:
+            raw_counts = Counter()
+            for it in items:
+                mnt_name = (it["mntCompany"] or "").strip()
+                if mnt_name and mnt_name not in TERRITORY_PLACEHOLDER_NAMES:
+                    raw_counts[mnt_name] += 1
+            big4_entries = [
+                {"name": g, "count": mnt_counts[g], "type": "big4"}
+                for g in ("현대", "오티스", "티케이", "미쓰비시")
+                if mnt_counts.get(g)
+            ]
+            etc_entries = sorted(
+                (
+                    {"name": name, "count": c, "type": "etc"}
+                    for name, c in raw_counts.items()
+                    if classify_company(name) == "기타" and c >= TERRITORY_MIN_COUNT
+                ),
+                key=lambda e: -e["count"],
+            )[:TERRITORY_TOP_ETC]
+            combined = sorted(big4_entries + etc_entries, key=lambda e: -e["count"])
+            territory_data[region] = combined
+
     with open(MANIFEST_FILE, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False)
+
+    with open(TERRITORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(territory_data, f, ensure_ascii=False)
+    if territory_data:
+        print(f"업체 영역 파일럿: {', '.join(sorted(territory_data.keys()))}")
 
     # 정보창 "상세정보" 버튼 전용 데이터 - [승강기번호, 건물정보, 구분, TM, 인승, 속도,
     # 정지층수] 압축 배열. 지도 마커 데이터와 분리된 파일이라 버튼을 누른 사람만

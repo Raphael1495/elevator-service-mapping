@@ -120,6 +120,22 @@
   }
   .detail-table th { background: #f5f5f5; }
 
+  #territory-panel {
+    position: absolute; top: 10px; right: 10px; z-index: 10;
+    width: 230px; padding: 12px; max-height: calc(100vh - 20px); overflow-y: auto;
+  }
+  #territory-panel h4 { margin: 0 0 4px 0; font-size: 14px; }
+  #territory-panel .territory-hint { font-size: 11px; color: #666; margin-bottom: 8px; }
+  .territory-company-item {
+    display: flex; justify-content: space-between; gap: 6px;
+    padding: 6px 8px; margin-bottom: 4px; border-radius: 6px; cursor: pointer;
+    font-size: 12px; background: #f5f5f5; border: 1px solid transparent;
+  }
+  .territory-company-item:hover { background: #ececec; }
+  .territory-company-item.active { background: #FEF3C7; border-color: #F59E0B; font-weight: bold; }
+  .territory-company-item .count { color: #777; white-space: nowrap; }
+  .territory-company-item.active .count { color: #92400E; }
+
   #legend { margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
   #legend .legend-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #555; margin-bottom: 3px; }
   #legend .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
@@ -230,6 +246,12 @@
   </div>
 </div>
 
+<div id="territory-panel" class="panel" style="display:none;">
+  <h4 id="territory-region-name"></h4>
+  <div class="territory-hint">이 지역 주요 업체 - 클릭하면 지도에 강조 표시</div>
+  <div id="territory-company-list"></div>
+</div>
+
 <div id="my-location-btn" title="내 위치로 이동">⌖</div>
 
 <div id="roadview-panel" class="panel">
@@ -271,10 +293,11 @@ kakao.maps.load(function () {
 
   var COMPANY_COLORS = { "현대": "#2E7D32", "오티스": "#1565C0", "티케이": "#6A1B9A", "미쓰비시": "#C62828", "기타": "#000000" };
 
-  function buildingSvgDataUrl(color) {
+  function buildingSvgDataUrl(color, opacity) {
     // 창문 한 줄(2개) + 문 1개 - 크기는 이전 20x26 그대로 유지
+    var op = opacity == null ? 1 : opacity;
     var svg =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="26" viewBox="0 0 20 26">' +
+      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="26" viewBox="0 0 20 26" opacity="' + op + '">' +
       '<ellipse cx="10" cy="24" rx="6" ry="1.8" fill="#000000" opacity="0.15"/>' +
       '<rect x="4" y="4" width="12" height="18" rx="2" fill="' + color + '" stroke="#ffffff" stroke-width="1.2"/>' +
       '<rect x="6.3" y="8" width="2.8" height="2.8" fill="#ffffff"/>' +
@@ -295,6 +318,40 @@ kakao.maps.load(function () {
       );
     }
     return markerImageCache[group];
+  }
+
+  // 업체 영역 보기 - 선택한 업체와 일치하는 마커는 크고 진하게(강조), 나머지는
+  // 작고 흐리게(딤 처리)해서 실제 건물 위치 그대로 "이 동네는 이 업체가 몰려있다"가
+  // 눈에 보이게 한다. 도형(폴리곤) 계산 없이 마커 색만 바꾸는 방식.
+  var TERRITORY_HIGHLIGHT_COLOR = "#F59E0B";
+  var TERRITORY_DIM_COLOR = "#B0B0B0";
+  var territoryMarkerImageCache = {};
+  function getTerritoryMarkerImage(matched) {
+    var key = matched ? "hl" : "dim";
+    if (!territoryMarkerImageCache[key]) {
+      territoryMarkerImageCache[key] = matched
+        ? new kakao.maps.MarkerImage(
+            buildingSvgDataUrl(TERRITORY_HIGHLIGHT_COLOR),
+            new kakao.maps.Size(25, 33),
+            { offset: new kakao.maps.Point(12, 31) }
+          )
+        : new kakao.maps.MarkerImage(
+            buildingSvgDataUrl(TERRITORY_DIM_COLOR, 0.45),
+            new kakao.maps.Size(16, 21),
+            { offset: new kakao.maps.Point(8, 19) }
+          );
+    }
+    return territoryMarkerImageCache[key];
+  }
+
+  function markerImageFor(item) {
+    if (selectedTerritoryCompany) {
+      var matched = selectedTerritoryCompany.type === "big4"
+        ? item._mntGroup === selectedTerritoryCompany.name
+        : item.mntCompany === selectedTerritoryCompany.name;
+      return getTerritoryMarkerImage(matched);
+    }
+    return getMarkerImage(item._mntGroup);
   }
 
   function renderLegend() {
@@ -695,7 +752,7 @@ kakao.maps.load(function () {
   function makeMarker(item) {
     var marker = new kakao.maps.Marker({
       position: new kakao.maps.LatLng(item.lat, item.lng),
-      image: getMarkerImage(item._mntGroup),
+      image: markerImageFor(item),
     });
     marker.__item = item;
     kakao.maps.event.addListener(marker, "click", function () {
@@ -1263,6 +1320,83 @@ kakao.maps.load(function () {
     map.panTo(pos);
   }
 
+  // 업체 영역 보기(파일럿: 강남구/서초구) - 화면 중앙이 속한 구를 찾아서, 그 구의
+  // 주요 업체 목록을 오른쪽 패널에 띄운다. 목록에서 업체를 고르면 마커 색으로
+  // 강조(markerImageFor 참고) - 별도 폴리곤/영역 계산 없이 실제 마커 위치 그대로 보여줌.
+  var TERRITORY_PILOT_REGIONS = ["서울특별시 강남구", "서울특별시 서초구"];
+  var territoryCompanies = null;
+  var currentTerritoryRegion = null;
+  var selectedTerritoryCompany = null;
+
+  function loadTerritoryData() {
+    loadData("./data/territory_companies.json")
+      .then(function (data) { territoryCompanies = data; })
+      .catch(function () { territoryCompanies = {}; })
+      .then(function () { updateTerritoryPanel(); }); // 최초 idle이 이미 지나갔을 수 있으니 로드 완료 후 한 번 확인
+  }
+
+  function reapplyMarkerStyles() {
+    Object.keys(markersById).forEach(function (id) {
+      var marker = markersById[id];
+      marker.setImage(markerImageFor(marker.__item));
+    });
+  }
+
+  function renderTerritoryPanel() {
+    var panel = document.getElementById("territory-panel");
+    var list = currentTerritoryRegion ? territoryCompanies[currentTerritoryRegion] : null;
+    if (!list) {
+      panel.style.display = "none";
+      return;
+    }
+    panel.style.display = "block";
+    document.getElementById("territory-region-name").textContent = displayRegionName(currentTerritoryRegion);
+    var listEl = document.getElementById("territory-company-list");
+    listEl.innerHTML = "";
+    list.forEach(function (entry) {
+      var row = document.createElement("div");
+      row.className = "territory-company-item";
+      if (selectedTerritoryCompany && selectedTerritoryCompany.name === entry.name) {
+        row.classList.add("active");
+      }
+      var nameSpan = document.createElement("span");
+      nameSpan.textContent = entry.name;
+      var countSpan = document.createElement("span");
+      countSpan.className = "count";
+      countSpan.textContent = entry.count.toLocaleString() + "대";
+      row.appendChild(nameSpan);
+      row.appendChild(countSpan);
+      row.addEventListener("click", function () {
+        selectedTerritoryCompany = (selectedTerritoryCompany && selectedTerritoryCompany.name === entry.name)
+          ? null
+          : { name: entry.name, type: entry.type };
+        reapplyMarkerStyles();
+        renderTerritoryPanel();
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  function updateTerritoryPanel() {
+    if (!territoryCompanies || !regionsManifest) return;
+    var center = map.getCenter();
+    var lat = center.getLat();
+    var lng = center.getLng();
+    var matchedRegion = null;
+    TERRITORY_PILOT_REGIONS.forEach(function (region) {
+      var info = regionsManifest[region];
+      if (!info || matchedRegion) return;
+      if (lat >= info.minLat && lat <= info.maxLat && lng >= info.minLng && lng <= info.maxLng) {
+        matchedRegion = region;
+      }
+    });
+    if (matchedRegion === currentTerritoryRegion) return;
+    currentTerritoryRegion = matchedRegion;
+    selectedTerritoryCompany = null;
+    reapplyMarkerStyles();
+    renderTerritoryPanel();
+  }
+
   // 지역 랭킹 - regions_manifest.json 에 지역별로 이미 계산되어 있는 노후건수/업체별
   // 건수(oldCount, mntCounts)만 가지고 만들기 때문에, 지도용 지역 데이터를 따로
   // 불러올 필요 없이 매니페스트 로드 직후 바로 계산할 수 있다.
@@ -1510,6 +1644,9 @@ kakao.maps.load(function () {
       kakao.maps.event.addListener(map, "idle", handleViewChange);
       loadSearchIndex(); // 지도 렌더링과 무관하게 백그라운드에서 미리 받아둠 (검색 시 대기시간 단축)
       renderRankings();
+
+      loadTerritoryData();
+      kakao.maps.event.addListener(map, "idle", updateTerritoryPanel);
     })
     .catch(function () {
       document.getElementById("search-status").textContent = "실데이터 없음 - 샘플 데이터로 표시";
