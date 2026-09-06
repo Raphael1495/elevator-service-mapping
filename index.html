@@ -717,7 +717,11 @@ kakao.maps.load(function () {
              facetPasses(activeMntCompany, COMPANY_GROUPS, item._mntGroup) &&
              facetPasses(activeTeam, TEAM_GROUPS, item.team) &&
              facetPasses(activeMgmtType, MGMT_TYPE_GROUPS, item.mgmtType) &&
-             (!activeOldOnly || isOldElevator(item));
+             (!activeOldOnly || isOldElevator(item)) &&
+             // 업체 영역 보기에서 업체를 선택했으면 그 업체(들)만 화면에 남긴다 -
+             // 그래야 축소된 상태(클러스터/격자 숫자)에서도 선택한 업체가 어디에
+             // 몰려있는지 보임. 선택 없으면(길이 0) 평소처럼 전부 통과.
+             (selectedTerritoryCompanies.length === 0 || territoryMatchIndex(item) !== -1);
     });
   }
 
@@ -1385,8 +1389,9 @@ kakao.maps.load(function () {
             selectedTerritoryCompanies.shift(); // 3번째를 고르면 제일 먼저 고른 것부터 밀어냄
           }
         }
-        reapplyMarkerStyles();
         renderTerritoryPanel();
+        handleFilterChange(); // 선택한 업체만 화면에 남도록 다시 그림(클러스터/격자 숫자도 재계산)
+        reapplyMarkerStyles(); // 새로 그려진 마커까지 포함해 강조색 확실히 적용
       });
       listEl.appendChild(row);
     });
@@ -1407,9 +1412,13 @@ kakao.maps.load(function () {
     });
     if (matchedRegion === currentTerritoryRegion) return;
     currentTerritoryRegion = matchedRegion;
+    var hadSelection = selectedTerritoryCompanies.length > 0;
     selectedTerritoryCompanies = [];
-    reapplyMarkerStyles();
     renderTerritoryPanel();
+    if (hadSelection) {
+      handleFilterChange(); // 선택 중이던 필터를 해제했으니 화면도 다시 그려야 함
+    }
+    reapplyMarkerStyles();
   }
 
   // 지역 랭킹 - regions_manifest.json 에 지역별로 이미 계산되어 있는 노후건수/업체별
