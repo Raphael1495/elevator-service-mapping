@@ -718,10 +718,11 @@ kakao.maps.load(function () {
              facetPasses(activeTeam, TEAM_GROUPS, item.team) &&
              facetPasses(activeMgmtType, MGMT_TYPE_GROUPS, item.mgmtType) &&
              (!activeOldOnly || isOldElevator(item)) &&
-             // 업체 영역 보기에서 업체를 선택했으면 그 업체(들)만 화면에 남긴다 -
-             // 그래야 축소된 상태(클러스터/격자 숫자)에서도 선택한 업체가 어디에
-             // 몰려있는지 보임. 선택 없으면(길이 0) 평소처럼 전부 통과.
-             (selectedTerritoryCompanies.length === 0 || territoryMatchIndex(item) !== -1);
+             // 업체 영역 보기에서 업체를 선택했으면 "지금 패널에 뜬 구" + "그 업체"
+             // 둘 다 만족하는 것만 화면에 남긴다 - 서초구를 보면서 오티스를 고르면
+             // 다른 구의 오티스는 다 빠지고 서초구 오티스만 남아야 함.
+             (selectedTerritoryCompanies.length === 0 ||
+               (item._region === currentTerritoryRegion && territoryMatchIndex(item) !== -1));
     });
   }
 
