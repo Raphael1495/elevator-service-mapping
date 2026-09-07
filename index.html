@@ -250,7 +250,7 @@
 
 <div id="territory-panel" class="panel" style="display:none;">
   <h4 id="territory-region-name"></h4>
-  <div class="territory-hint">이 지역 주요 업체 - 최대 2개까지 선택해서 비교(주황/파랑)</div>
+  <div class="territory-hint">이 지역 주요 업체 - 최대 2개까지 선택해서 비교(대형사는 원래 색, 기타는 노란색)</div>
   <div id="territory-company-list"></div>
 </div>
 
@@ -326,23 +326,35 @@ kakao.maps.load(function () {
   // 다른 색), 나머지는 작고 흐리게(딤 처리)해서 실제 건물 위치 그대로 "이 동네는
   // 이 업체가 몰려있다"가 눈에 보이게 한다. 2개를 같이 선택하면 두 업체의 분포를
   // 색으로 구분해서 비교할 수 있다. 도형(폴리곤) 계산 없이 마커 색만 바꾸는 방식.
-  var TERRITORY_HIGHLIGHT_COLORS = ["#F59E0B", "#2563EB"]; // 1번째 선택=주황, 2번째 선택=파랑
+  // 대형 4사는 원래 배정된 COMPANY_COLORS 그대로 강조하고, 기타(중소업체)는
+  // 원래 색이 없으므로(전부 검정) 선택 시 노란색 계열로만 강조한다.
+  var TERRITORY_ETC_COLORS = ["#FBC02D", "#F9A825"]; // 기타 업체 선택 시 노란색 계열(2개 동시 선택 시 구분용 음영차)
   var TERRITORY_DIM_COLOR = "#B0B0B0";
   var territoryMarkerImageCache = {};
+  function territoryColorForIndex(idx) {
+    var sel = selectedTerritoryCompanies[idx];
+    if (!sel) return TERRITORY_ETC_COLORS[0];
+    return sel.type === "big4" ? COMPANY_COLORS[sel.name] : (TERRITORY_ETC_COLORS[idx] || TERRITORY_ETC_COLORS[0]);
+  }
   function getTerritoryMarkerImage(colorIndex) {
-    var key = colorIndex === -1 ? "dim" : "hl" + colorIndex;
+    if (colorIndex === -1) {
+      if (!territoryMarkerImageCache.dim) {
+        territoryMarkerImageCache.dim = new kakao.maps.MarkerImage(
+          buildingSvgDataUrl(TERRITORY_DIM_COLOR, 0.45),
+          new kakao.maps.Size(16, 21),
+          { offset: new kakao.maps.Point(8, 19) }
+        );
+      }
+      return territoryMarkerImageCache.dim;
+    }
+    var color = territoryColorForIndex(colorIndex);
+    var key = "hl:" + color;
     if (!territoryMarkerImageCache[key]) {
-      territoryMarkerImageCache[key] = colorIndex === -1
-        ? new kakao.maps.MarkerImage(
-            buildingSvgDataUrl(TERRITORY_DIM_COLOR, 0.45),
-            new kakao.maps.Size(16, 21),
-            { offset: new kakao.maps.Point(8, 19) }
-          )
-        : new kakao.maps.MarkerImage(
-            buildingSvgDataUrl(TERRITORY_HIGHLIGHT_COLORS[colorIndex]),
-            new kakao.maps.Size(25, 33),
-            { offset: new kakao.maps.Point(12, 31) }
-          );
+      territoryMarkerImageCache[key] = new kakao.maps.MarkerImage(
+        buildingSvgDataUrl(color),
+        new kakao.maps.Size(25, 33),
+        { offset: new kakao.maps.Point(12, 31) }
+      );
     }
     return territoryMarkerImageCache[key];
   }
@@ -1074,7 +1086,7 @@ kakao.maps.load(function () {
     if (selectedTerritoryCompanies.length > 0) {
       selectedTerritoryCompanies.forEach(function (sel, idx) {
         var subset = items.filter(function (item) { return territoryMatchIndex(item) === idx; });
-        renderDensityGridLayer(subset, TERRITORY_HIGHLIGHT_COLORS[idx]);
+        renderDensityGridLayer(subset, territoryColorForIndex(idx));
       });
       return;
     }
@@ -1356,7 +1368,7 @@ kakao.maps.load(function () {
   var TERRITORY_MAX_SELECT = 2;
   var territoryCompanies = null;
   var currentTerritoryRegion = null;
-  var selectedTerritoryCompanies = []; // 최대 2개, 순서대로 주황/파랑 색 배정
+  var selectedTerritoryCompanies = []; // 최대 2개 - 대형사는 원래 색, 기타는 노란색 계열로 표시
 
   function loadTerritoryData() {
     loadData("./data/territory_companies.json")
