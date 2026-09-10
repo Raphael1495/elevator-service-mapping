@@ -1486,10 +1486,17 @@ kakao.maps.load(function () {
     if (matchedRegion === currentTerritoryRegion) return;
     currentTerritoryRegion = matchedRegion;
     var hadSelection = selectedTerritoryCompanies.length > 0;
-    selectedTerritoryCompanies = [];
+    // 파일럿 구역(강남구/서초구)끼리 넘어갈 때는 선택한 업체를 그대로 유지한다 -
+    // getFiltered가 currentTerritoryRegion 기준으로 다시 범위를 잡아주므로
+    // "현대 선택한 채로 다른 구로 넘어가도 그 구의 현대만" 자연스럽게 보인다.
+    // 파일럿 구역을 완전히 벗어나면(matchedRegion=null) currentTerritoryRegion이
+    // 없어져서 필터링이 전부 걸러버리므로 그때만 선택을 해제한다.
+    if (!matchedRegion) {
+      selectedTerritoryCompanies = [];
+    }
     renderTerritoryPanel();
     if (hadSelection) {
-      handleFilterChange(); // 선택 중이던 필터를 해제했으니 화면도 다시 그려야 함
+      handleFilterChange(); // 선택이 있던 채로 구/영역이 바뀌었으니 새 기준으로 다시 그려야 함
     }
     reapplyMarkerStyles();
   }
