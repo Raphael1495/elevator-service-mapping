@@ -1425,14 +1425,23 @@ kakao.maps.load(function () {
     });
   }
 
-  // 화면에 실제로 보이는 각 구의 승강기 개수를 세서, 제일 많이 보이는 구를 고른다.
-  // 데이터가 아직 로드되지 않은 구는 셀 수 없으므로 후보에서 제외된다.
-  function pickTerritoryRegionByCount(sw, ne) {
-    var best = null;
-    var bestCount = 0;
-    TERRITORY_PILOT_REGIONS.forEach(function (region) {
+  // 1) 화면 중앙점이 bbox 안에 들어오는 파일럿 구를 후보로 추린다(기존 방식).
+  // 2) 강남구/서초구처럼 bbox가 겹쳐서 후보가 2개 이상이면, 그중 화면에 실제로
+  //    더 많이 보이는(현재 지도 영역 안 승강기 개수가 더 많은) 구를 고른다 -
+  //    중앙점만으로는 화면에 강남구가 대부분인데 중앙점만 서초구 bbox 안이라
+  //    서초구로 잘못 판정되는 경우가 있었다. 후보가 아예 없거나(파일럿 구역
+  //    밖) 하나뿐이면 기존처럼 그대로 확정한다 - 줌아웃해서 화면(bounds)이
+  //    아주 커진 상태에서 개수만으로 비교하면 화면 중앙과 상관없는 먼 구가
+  //    걸릴 수 있어서, 개수 비교는 "중앙점이 실제로 그 구 안"인 경우로 한정한다.
+  function pickTerritoryRegion(lat, lng, sw, ne) {
+    var candidates = TERRITORY_PILOT_REGIONS.filter(function (region) {
       var info = regionsManifest[region];
-      if (!info || !boundsOverlap(info, sw, ne)) return;
+      return info && lat >= info.minLat && lat <= info.maxLat && lng >= info.minLng && lng <= info.maxLng;
+    });
+    if (candidates.length <= 1) return candidates[0] || null;
+    var best = candidates[0];
+    var bestCount = -1;
+    candidates.forEach(function (region) {
       var items = regionData[region];
       if (!items) return;
       var count = 0;
@@ -1445,29 +1454,7 @@ kakao.maps.load(function () {
         best = region;
       }
     });
-    return bestCount > 0 ? best : null;
-  }
-
-  // 데이터가 아직 없는 구(방금 진입해서 로드 중인 경우 등)를 위한 대략치 판단 -
-  // 인접한 구끼리는 경계 사각형(bbox)이 겹칠 수 있어서(예: 강남구/서초구), 겹치는
-  // 후보가 여러 개면 그중 중심점이 화면 중앙에 가장 가까운 구를 고른다.
-  function pickTerritoryRegionByCenter(lat, lng) {
-    var matchedRegion = null;
-    var matchedDist = Infinity;
-    TERRITORY_PILOT_REGIONS.forEach(function (region) {
-      var info = regionsManifest[region];
-      if (!info) return;
-      if (lat >= info.minLat && lat <= info.maxLat && lng >= info.minLng && lng <= info.maxLng) {
-        var cLat = (info.minLat + info.maxLat) / 2;
-        var cLng = (info.minLng + info.maxLng) / 2;
-        var dist = (lat - cLat) * (lat - cLat) + (lng - cLng) * (lng - cLng);
-        if (dist < matchedDist) {
-          matchedDist = dist;
-          matchedRegion = region;
-        }
-      }
-    });
-    return matchedRegion;
+    return best;
   }
 
   function updateTerritoryPanel() {
@@ -1476,13 +1463,7 @@ kakao.maps.load(function () {
     var sw = bounds.getSouthWest();
     var ne = bounds.getNorthEast();
     var center = map.getCenter();
-    // 중앙점이 어느 구 bbox 안에 있는지가 아니라, 실제로 화면에 그 구의 승강기가
-    // 몇 개나 보이는지로 판단한다 - 강남구/서초구처럼 경계가 붙어 있으면 중앙점만
-    // 딱 한쪽 구 bbox 안에 걸려도 화면엔 반대쪽 구가 훨씬 많이 보이는 경우가
-    // 있었다(화면엔 강남구가 대부분인데 중앙점만 서초구 bbox 안이라 서초구로
-    // 판정됨). 데이터가 아직 없는 구(막 진입한 경우)는 중앙점+가장 가까운 구
-    // 중심 방식으로 대략 판단해둔다.
-    var matchedRegion = pickTerritoryRegionByCount(sw, ne) || pickTerritoryRegionByCenter(center.getLat(), center.getLng());
+    var matchedRegion = pickTerritoryRegion(center.getLat(), center.getLng(), sw, ne);
     if (matchedRegion === currentTerritoryRegion) return;
     currentTerritoryRegion = matchedRegion;
     var hadSelection = selectedTerritoryCompanies.length > 0;
