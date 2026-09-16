@@ -55,6 +55,13 @@ python pipeline/build_dataset.py                              # 5. 지도 데이
 2~4번은 아직 안 돌려도 된다. 건축물대장 캐시가 없으면 `build_dataset.py`는 기존과 똑같이 동작한다.
 자세한 내용(조인 키, 호출량, 남은 확인사항)은 `docs/building-ledger.md` 참고.
 
+API가 어떤 값을 주는지 미리 보고 싶으면(실제 수집 전에), 실제 현장 8곳(건물 유형별로 다양하게 선정)을
+대상으로 조회해서 엑셀로 뽑아주는 스크립트도 있다:
+
+```bash
+python pipeline/sample_building_ledger.py   # -> pipeline/sample_building_ledger_output.xlsx
+```
+
 지오코딩이 다 끝나지 않아도 `build_dataset.py`를 실행하면 그때까지 완료된 데이터만 반영되므로,
 매일 `geocode.py` → `build_dataset.py` 순서로 실행하면 지도가 점점 채워집니다.
 
