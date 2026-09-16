@@ -119,6 +119,12 @@
     overflow-wrap: break-word; font-size: 10px;
   }
   .detail-table th { background: #f5f5f5; }
+  /* 건축물대장 한 줄 요약 - 승강기별 표와 구분되도록 옅은 파란 박스로 */
+  .ledger-summary {
+    background: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 5px;
+    padding: 5px 7px; margin-bottom: 6px; font-size: 11px; color: #1E3A8A;
+  }
+  .ledger-summary .ledger-caveat { color: #92400E; font-weight: normal; }
 
   #territory-panel {
     position: absolute; top: 10px; right: 10px; z-index: 10;
@@ -901,6 +907,31 @@ kakao.maps.load(function () {
   // 이 상태를 이어받아 자동으로 펼쳐주기 위해 기억해둔다.
   var detailPanelOpen = false;
 
+  // 건축물대장 값 표시용 포맷 - 대장 응답은 사용승인일이 "20040211" 같은 8자리 문자열,
+  // 연면적/층수가 문자열 숫자로 오므로 보기 좋게 다듬는다.
+  function formatLedgerDate(value) {
+    var text = String(value);
+    if (/^\d{8}$/.test(text)) {
+      return text.slice(0, 4) + "-" + text.slice(4, 6) + "-" + text.slice(6);
+    }
+    return text;
+  }
+
+  function formatArea(value) {
+    var num = parseFloat(value);
+    if (isNaN(num)) return String(value);
+    return Math.round(num).toLocaleString();
+  }
+
+  function formatFloors(ground, underground) {
+    var g = parseInt(ground, 10);
+    var u = parseInt(underground, 10);
+    var parts = [];
+    if (!isNaN(g) && g > 0) parts.push("지상 " + g + "층");
+    if (!isNaN(u) && u > 0) parts.push("지하 " + u + "층");
+    return parts.join("/");
+  }
+
   function toggleDetailPanel(infoWindowEl, item) {
     var existing = infoWindowEl.querySelector(".detail-panel");
     if (existing) {
@@ -927,6 +958,30 @@ kakao.maps.load(function () {
         return it.address === item.address && (it.name || "") === (item.name || "");
       });
       if (siblings.indexOf(item) === -1) siblings.push(item);
+
+      // 건축물대장 정보는 승강기별이 아니라 건물(현장) 단위 값이므로 표 안에 대수만큼
+      // 반복하지 않고 표 위에 한 줄 요약으로 보여준다. 같은 현장이면 어느 승강기 행에서
+      // 읽어도 같은 값이라 첫 번째로 값이 있는 행을 쓴다.
+      var ledgerRow = null;
+      for (var si = 0; si < siblings.length; si++) {
+        var cand = detailMap[siblings[si].id];
+        if (cand && cand[7]) { ledgerRow = cand; break; }
+      }
+      if (ledgerRow) {
+        var parts = ["<b>" + ledgerRow[7] + "</b>"];
+        if (ledgerRow[8]) parts.push("사용승인 " + formatLedgerDate(ledgerRow[8]));
+        if (ledgerRow[9]) parts.push("연면적 " + formatArea(ledgerRow[9]) + "㎡");
+        var floors = formatFloors(ledgerRow[10], ledgerRow[11]);
+        if (floors) parts.push(floors);
+        if (ledgerRow[12] != null) parts.push("대장 승강기 " + ledgerRow[12] + "대");
+        // 동을 특정하지 못해 그 지번의 대표 건물로 대체한 경우는 그렇다고 알려준다.
+        var caveat = ledgerRow[13] === "largest"
+          ? " <span class=\"ledger-caveat\">(동 미확정 - 지번 대표 건물 기준)</span>" : "";
+        var ledgerEl = document.createElement("div");
+        ledgerEl.className = "ledger-summary";
+        ledgerEl.innerHTML = "건축물대장 · " + parts.join(" · ") + caveat;
+        panel.insertBefore(ledgerEl, panel.querySelector(".detail-panel-body"));
+      }
 
       var html = "<table class=\"detail-table\"><thead><tr>" +
         "<th>승강기번호</th><th>건물정보</th><th>구분</th><th>TM</th><th>용도</th><th>인승</th><th>속도</th><th>정지층수</th>" +

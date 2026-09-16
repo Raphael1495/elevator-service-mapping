@@ -21,8 +21,20 @@ from datetime import date
 import pandas as pd
 import pyxlsb
 
+from building_ledger import (
+    MATCH_NONE,
+    MATCH_QUALITY_LABELS,
+    MATCH_QUALITY_ORDER,
+    elevator_count_of,
+    match_ledger_row,
+    pnu_key,
+    purpose_of,
+)
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_FILE = os.path.join(BASE_DIR, "pipeline", "cache", "geocode_cache.json")
+JIBUN_CACHE_FILE = os.path.join(BASE_DIR, "pipeline", "cache", "jibun_cache.json")
+LEDGER_CACHE_FILE = os.path.join(BASE_DIR, "pipeline", "cache", "building_ledger.json")
 ADDRESS_SOURCE = os.path.join(BASE_DIR, "국가DB_SID_주소.xlsx")
 DB_SOURCE = os.path.join(BASE_DIR, "국가DB_260805.xlsb")
 DB_SHEET = "aa"
@@ -207,6 +219,44 @@ def count_units_by_address_and_name(pairs):
     return Counter((addr, (name or "").strip()) for addr, name in pairs)
 
 
+def load_building_ledger():
+    """건축물대장 조인에 필요한 두 캐시를 읽는다.
+      jibun_cache.json     주소(도로명) -> 지번 기반 조회키 (resolve_jibun.py 생성)
+      building_ledger.json 지번키 -> 표제부 목록        (fetch_building_ledger.py 생성)
+    아직 수집 전이면 둘 다 비어있고, 그때는 건축물대장 없이 기존과 똑같이 진행한다."""
+    jibun = {}
+    ledger = {}
+    if os.path.exists(JIBUN_CACHE_FILE):
+        with open(JIBUN_CACHE_FILE, encoding="utf-8") as f:
+            jibun = json.load(f)
+    if os.path.exists(LEDGER_CACHE_FILE):
+        with open(LEDGER_CACHE_FILE, encoding="utf-8") as f:
+            ledger = json.load(f)
+    if not jibun or not ledger:
+        print("건축물대장 캐시 없음 - 대장 용도 없이 진행 "
+              "(pipeline/resolve_jibun.py -> pipeline/fetch_building_ledger.py 순서로 수집)")
+    else:
+        print(f"건축물대장: 주소-지번 {len(jibun)}건 / 수집된 지번 {len(ledger)}건")
+    return jibun, ledger
+
+
+def make_ledger_lookup(jibun_by_address, ledger_by_pnu):
+    """(주소, 현장명) -> 건축물대장 표제부 한 건을 찾아주는 함수를 만들어 반환한다.
+    같은 건물의 승강기가 여러 대씩 있으므로(전국 평균 3대 이상) 현장 단위로 결과를
+    기억해둬서 동 매칭을 건물당 한 번만 한다."""
+    memo = {}
+
+    def lookup(address, name):
+        key = (address, (name or "").strip())
+        if key not in memo:
+            jibun = jibun_by_address.get(address)
+            rows = ledger_by_pnu.get(pnu_key(jibun)) if jibun else None
+            memo[key] = match_ledger_row(name, rows or [])
+        return memo[key]
+
+    return lookup
+
+
 def load_cache():
     if not os.path.exists(CACHE_FILE):
         raise SystemExit(f"{CACHE_FILE} 이 없습니다. 먼저 pipeline/geocode.py를 실행하세요.")
@@ -274,6 +324,7 @@ def main():
     cache = load_cache()
     addr_map = load_addr_map()
     mgmt_map = load_hyundai_management_map()
+    ledger_lookup = make_ledger_lookup(*load_building_ledger())
     print(f"지오코딩 캐시: {len(cache)}건 / 주소 매핑: {len(addr_map)}건 / 현대 관리대수 매핑: {len(mgmt_map)}건")
 
     # 대수(unitCount)는 주소+현장명이 둘 다 같아야 같은 현장으로 묶어서 세야 하는데,
@@ -304,6 +355,7 @@ def main():
 
     records = []
     detail_by_region = defaultdict(list)
+    ledger_match_counts = Counter()
     skipped_no_coord = 0
     for eno, addr, name, vals in raw_rows:
         coord = cache.get(addr)
@@ -335,6 +387,12 @@ def main():
 
         region = region_of(addr)
         if DETAIL_PILOT_REGIONS is None or region in DETAIL_PILOT_REGIONS:
+            # 7번 인덱스부터는 건축물대장(표제부)에서 가져온 건물 단위 정보.
+            # 국가DB의 건물용도(BULDPRPOS, 1번 인덱스)는 승강기 설치 신고 시점 값이라
+            # "제2종근린생활시설-기타"처럼 뭉뚱그려진 경우가 많아서, 건축물대장의
+            # 주용도+기타용도로 실제 용도를 보강한다. 대장 수집 전에는 전부 None.
+            ledger_row, match_quality = ledger_lookup(addr, name)
+            ledger_match_counts[match_quality] += 1
             detail_by_region[region].append(
                 [
                     padded_id,
@@ -344,6 +402,13 @@ def main():
                     vals[idx["RATEDCAP"]],
                     vals[idx["RATEDSPEED"]],
                     vals[idx["SHUTTLEFLOORCNT"]],
+                    purpose_of(ledger_row),
+                    (ledger_row or {}).get("useAprDay"),
+                    (ledger_row or {}).get("totArea"),
+                    (ledger_row or {}).get("grndFlrCnt"),
+                    (ledger_row or {}).get("ugrndFlrCnt"),
+                    elevator_count_of(ledger_row),
+                    match_quality,
                 ]
             )
 
@@ -431,6 +496,16 @@ def main():
     if detail_by_region:
         pilot_desc = "전체" if DETAIL_PILOT_REGIONS is None else ", ".join(sorted(detail_by_region.keys()))
         print(f"상세정보 파일: {len(detail_by_region)}개 지역 ({pilot_desc})")
+
+    # 건축물대장 조인 결과 - "largest"가 많으면 한 지번에 동이 여러 개인데 현장명으로
+    # 동을 못 고른 것이므로, 매칭 규칙(building_ledger.match_ledger_row)을 손봐야 한다는 신호.
+    matched = sum(c for q, c in ledger_match_counts.items() if q != MATCH_NONE)
+    if matched:
+        total_detail = sum(ledger_match_counts.values())
+        print(f"건축물대장 조인: {matched}/{total_detail}건 ({matched * 100 // total_detail}%)")
+        for quality in MATCH_QUALITY_ORDER:
+            if ledger_match_counts.get(quality):
+                print(f"  {MATCH_QUALITY_LABELS[quality]}: {ledger_match_counts[quality]}건")
 
     # 지도 데이터(지역 파일)는 화면에 걸치는 지역만 불러오지만, 검색은 지금 화면과
     # 무관하게 전체에서 찾을 수 있어야 하므로 훨씬 가벼운 검색 전용 색인을 따로 만든다.

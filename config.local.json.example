@@ -1,3 +1,4 @@
 {
-  "kakao_rest_api_key": "여기에 카카오 개발자 콘솔의 REST API 키를 붙여넣으세요"
+  "kakao_rest_api_key": "여기에 카카오 개발자 콘솔의 REST API 키를 붙여넣으세요",
+  "data_go_kr_service_key": "여기에 공공데이터포털 마이페이지의 일반 인증키(Decoding) 값을 붙여넣으세요"
 }

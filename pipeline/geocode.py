@@ -55,6 +55,13 @@ def save_json(path, data):
     os.replace(tmp, path)
 
 
+# 응답의 address(지번) 객체에서 건축물대장 조회에 필요한 값만 같이 저장해둔다.
+# 건축물대장 API는 도로명주소로 조회할 수 없고 지번 기반 키만 받으므로, 어차피 같은
+# 응답에 들어있는 이 값들을 지금 챙겨두면 나중에 같은 주소를 다시 호출하지 않아도 된다
+# (자세한 내용은 pipeline/resolve_jibun.py 와 docs/building-ledger.md 참고).
+JIBUN_FIELDS = ["b_code", "main_address_no", "sub_address_no", "mountain_yn", "address_name"]
+
+
 def geocode_one(address, rest_key):
     url = "https://dapi.kakao.com/v2/local/search/address.json"
     headers = {"Authorization": f"KakaoAK {rest_key}"}
@@ -65,7 +72,11 @@ def geocode_one(address, rest_key):
     if not docs:
         return None
     d = docs[0]
-    return {"lat": float(d["y"]), "lng": float(d["x"])}
+    result = {"lat": float(d["y"]), "lng": float(d["x"])}
+    jibun = d.get("address") or {}
+    if jibun.get("b_code"):
+        result["jibun"] = {f: jibun.get(f) for f in JIBUN_FIELDS}
+    return result
 
 
 def main():
