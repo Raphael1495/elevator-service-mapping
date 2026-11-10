@@ -19,7 +19,7 @@ CACHE_DIR = os.path.join(BASE_DIR, "pipeline", "cache")
 CACHE_FILE = os.path.join(CACHE_DIR, "geocode_cache.json")
 FAILED_FILE = os.path.join(CACHE_DIR, "geocode_failed.json")
 CONFIG_FILE = os.path.join(BASE_DIR, "config.local.json")
-ADDRESS_SOURCE = os.path.join(BASE_DIR, "국가DB_SID_주소.xlsx")
+ADDRESS_SOURCE = os.path.join(BASE_DIR, "국가DB_SID_주소_260805.xlsx")
 
 DAILY_LIMIT = 90000  # 카카오 무료 한도(10만/일)보다 여유를 둔 값
 SLEEP_SEC = 0.08  # 초당 약 12건 - 카카오 QPS 제한 내 안전 마진

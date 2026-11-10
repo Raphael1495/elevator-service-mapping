@@ -39,12 +39,22 @@
   .filter-group { margin-top: 12px; }
   .filter-group h4 { margin: 0 0 6px 0; font-size: 12px; color: #555; }
   .chip-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  .chip-row.collapsed { display: none; }
+  .filter-group h4.fg-toggle {
+    display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; user-select: none;
+  }
+  .fg-toggle .arrow { font-size: 16px; line-height: 1; }
+  .fg-summary { font-weight: normal; color: #1565C0; margin-left: 4px; }
   .chip {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 4px 8px; border-radius: 12px; border: 1px solid #ddd;
     cursor: pointer; user-select: none; font-size: 12px; background: #f7f7f7;
   }
   .chip.active { background: #333; color: #fff; border-color: #333; }
+  .org-sub { margin-left: 8px; }
+  .partner-row { max-height: 150px; overflow-y: auto; }
+  .chip .chip-sub { font-size: 10px; opacity: 0.7; }
   .chip input { display: none; }
 
   #dashboard { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
@@ -189,20 +199,28 @@
       <span class="roadview-btn" id="export-csv-btn">현재 화면 목록 엑셀 다운로드</span>
 
       <div class="filter-group">
-        <h4>제조업체 표시</h4>
+        <h4 class="fg-toggle" id="manufacturer-toggle"><span>제조업체 표시<span class="fg-summary" id="manufacturer-summary"></span></span><span class="arrow" id="manufacturer-arrow">▾</span></h4>
         <div class="chip-row" id="manufacturer-filters"></div>
       </div>
       <div class="filter-group">
-        <h4>유지보수업체 표시</h4>
+        <h4 class="fg-toggle" id="mntcompany-toggle"><span>유지보수업체 표시<span class="fg-summary" id="mntcompany-summary"></span></span><span class="arrow" id="mntcompany-arrow">▾</span></h4>
         <div class="chip-row" id="mntcompany-filters"></div>
       </div>
       <div class="filter-group">
-        <h4>현대지사</h4>
+        <h4>현대지사 · 담당</h4>
+        <div class="chip-row" id="dam-filters"></div>
+      </div>
+      <div class="filter-group org-sub" id="team-filter-group" style="display:none;">
+        <h4>└ 팀 (지사·센터)</h4>
         <div class="chip-row" id="team-filters"></div>
       </div>
-      <div class="filter-group" id="mgmttype-filter-group" style="display:none; margin-left:8px;">
-        <h4>└ 직영구분</h4>
+      <div class="filter-group org-sub" id="mgmttype-filter-group" style="display:none;">
+        <h4>└ 구분</h4>
         <div class="chip-row" id="mgmttype-filters"></div>
+      </div>
+      <div class="filter-group org-sub" id="partner-filter-group" style="display:none;">
+        <h4>└ 파트너사</h4>
+        <div class="chip-row partner-row" id="partner-filters"></div>
       </div>
       <div class="filter-group">
         <h4>노후 승강기</h4>
@@ -543,46 +561,99 @@ kakao.maps.load(function () {
     activeMntCompany[g] = false;
   });
 
-  // 담당 지사(팀) - 회사 필터와 달리 목록이 고정값이 아니라 manifest를 받아봐야
-  // 알 수 있으므로(현대 관리대수 원본 기준 19개 지사), 매니페스트 로드 후 채워진다.
-  var TEAM_GROUPS = [];
+  // 현대지사 필터 - 담당 > 팀(지사·센터) > 구분(직영/협력) > 파트너사 4단계.
+  // 단계별 목록은 data/org_hierarchy.json 의 노드 표([담당, 팀, 구분, 파트너사])에서 만들고,
+  // 각 승강기는 노드 번호(pt)만 갖고 있다. 위 단계에서 고른 항목에 속한 것만 아래 단계에
+  // 나타나며, 위 단계를 해제하면 그 아래 선택도 함께 풀린다. 자회사 센터는 구분 단계 없이
+  // 팀 아래에 바로 영업소/서비스협력(파트너사)이 나온다.
+  var ORG_NODES = [];
+  var DAM_GROUPS = [];
+  var activeDam = {};
   var activeTeam = {};
+  var activeMgmtType = {};
+  var activePartner = {};
+  var DAM_DISPLAY_NAMES = { "강북": "강북담당", "강남": "강남담당", "동부": "동부담당", "서부": "서부담당", "ES": "ES담당", "자회사": "자회사" };
+  var MGMT_TYPE_DISPLAY_NAMES = { "협력사": "협력" };
 
-  // 지사 표시 순서 및 축약 이름 (요청하신 순서 그대로) - 이 목록에 없는 새 지사가
-  // 나중에 데이터에 추가되면 목록 맨 뒤에 원래 이름으로 붙는다(누락 방지).
-  var TEAM_ORDER = [
-    "ES서비스팀", "강북지사(서비스)", "강서지사(서비스)", "인천지사(서비스)",
-    "강남지사(서비스)", "분당지사(서비스)", "수원지사(서비스)", "강원지사(서비스)",
-    "대구지사(서비스)", "부산지사(서비스)", "울산지사(서비스)", "경남지사(서비스)",
-    "대전지사(서비스)", "충청지사(서비스)", "광주지사(서비스)", "전주지사(서비스)",
-    "제주지사(서비스)", "서울서비스",
-  ];
-  var TEAM_DISPLAY_NAMES = {
-    "ES서비스팀": "ES", "강북지사(서비스)": "강북", "강서지사(서비스)": "강서",
-    "인천지사(서비스)": "인천", "강남지사(서비스)": "강남", "분당지사(서비스)": "분당",
-    "수원지사(서비스)": "수원", "강원지사(서비스)": "강원", "대구지사(서비스)": "대구",
-    "부산지사(서비스)": "부산", "울산지사(서비스)": "울산", "경남지사(서비스)": "경남",
-    "대전지사(서비스)": "대전", "충청지사(서비스)": "충청", "광주지사(서비스)": "광주",
-    "전주지사(서비스)": "전주", "제주지사(서비스)": "제주", "서울서비스": "서울서비스",
-  };
-
+  function displayDamName(dam) { return DAM_DISPLAY_NAMES[dam] || dam; }
   function displayTeamName(team) {
     if (!team) return "미배정(타사 관리 등)";
-    return TEAM_DISPLAY_NAMES[team] || team;
+    return team.replace("(서비스)", "");
   }
-
-  // 직영구분(직영/협력/자회사) - 지사와 마찬가지로 현대 직영건에만 있는 정보라,
-  // 지사를 하나도 안 골랐을 땐 의미가 없으므로 지사를 고를 때만 필터를 보여준다.
-  // "자회사"는 실제로는 서울서비스 지사 전체(45,832건)를 의미하는 값이라, 지사와
-  // 완전히 겹치는 정보임 - 다른 지사에는 자회사 건이 전혀 없음. 지사를 이미 고르면
-  // 알 수 있는 정보를 직영구분에서 또 고르게 하면 혼란스러우므로 필터 옵션에서는 뺀다
-  // (정보창/엑셀 내보내기에는 계속 표시).
-  var MGMT_TYPE_ORDER = ["직영", "협력사"];
-  var MGMT_TYPE_GROUPS = [];
-  var activeMgmtType = {};
-  var MGMT_TYPE_DISPLAY_NAMES = { "협력사": "협력" };
+  function shortTeamName(team) {
+    return displayTeamName(team).replace("지사", "").replace("서비스팀", "").replace("센터", "");
+  }
   function displayMgmtType(t) {
     return MGMT_TYPE_DISPLAY_NAMES[t] || t;
+  }
+
+  var orgNodePasses = [];     // 노드 번호 -> 현재 필터를 통과하는지(O(1) 조회용 캐시)
+  var anyDamSelected = false;
+
+  function selectedOf(map) {
+    return Object.keys(map).filter(function (k) { return map[k]; });
+  }
+
+  // 단계별로 지금 보여야 할 선택지 목록
+  function visibleTeamOptions() {
+    var seen = {}, out = [];
+    ORG_NODES.forEach(function (n) {
+      if (activeDam[n[0]] && !seen[n[1]]) { seen[n[1]] = true; out.push(n[1]); }
+    });
+    return out;
+  }
+  function visibleTypeOptions() {
+    var has = {};
+    ORG_NODES.forEach(function (n) {
+      if (activeTeam[n[1]] && n[2] !== "자회사") has[n[2]] = true;
+    });
+    return ["직영", "협력사"].filter(function (t) { return has[t]; });
+  }
+  function visiblePartnerNodes() {
+    var out = [];
+    ORG_NODES.forEach(function (n, i) {
+      if (!activeTeam[n[1]] || !n[3]) return;
+      if (n[2] === "자회사" || activeMgmtType[n[2]]) out.push(i);
+    });
+    return out;
+  }
+
+  // 위 단계에서 사라진 선택지의 하위 선택을 정리하고, 노드별 통과 여부 캐시를 다시 계산
+  function recomputeOrgState() {
+    var teams = {};
+    visibleTeamOptions().forEach(function (t) { teams[t] = true; });
+    Object.keys(activeTeam).forEach(function (t) { if (!teams[t]) delete activeTeam[t]; });
+    var types = {};
+    visibleTypeOptions().forEach(function (t) { types[t] = true; });
+    Object.keys(activeMgmtType).forEach(function (t) { if (!types[t]) delete activeMgmtType[t]; });
+    var parts = {};
+    visiblePartnerNodes().forEach(function (i) { parts[i] = true; });
+    Object.keys(activePartner).forEach(function (i) { if (!parts[i]) delete activePartner[i]; });
+
+    anyDamSelected = selectedOf(activeDam).length > 0;
+    var damHasTeam = {};
+    ORG_NODES.forEach(function (n) { if (activeDam[n[0]] && activeTeam[n[1]]) damHasTeam[n[0]] = true; });
+    var anyType = selectedOf(activeMgmtType).length > 0;
+    var partnerGroupHas = {};
+    selectedOf(activePartner).forEach(function (i) {
+      var n = ORG_NODES[i];
+      partnerGroupHas[n[1] + "|" + n[2]] = true;
+    });
+    orgNodePasses = ORG_NODES.map(function (n, i) {
+      if (!anyDamSelected) return true;
+      if (!activeDam[n[0]]) return false;
+      if (!damHasTeam[n[0]]) return true;          // 담당만 골랐으면 그 담당 전체
+      if (!activeTeam[n[1]]) return false;
+      if (n[2] !== "자회사" && anyType && !activeMgmtType[n[2]]) return false;
+      if (partnerGroupHas[n[1] + "|" + n[2]] && !activePartner[i]) return false;
+      return true;
+    });
+  }
+
+  function orgPasses(item) {
+    if (!anyDamSelected) return true;
+    if (item.pt === null || item.pt === undefined) return false;
+    return !!orgNodePasses[item.pt];
   }
 
   // 정밀안전검사 대상 기준(승강기안전관리법: 설치검사일로부터 15년 경과)
@@ -600,6 +671,7 @@ kakao.maps.load(function () {
   // 필터가 바뀌면 지금 모드(상세/요약)에 맞는 화면을 다시 그린다. 요약 모드(축소 상태)에서
   // 필터를 바꿔도 배지 숫자가 그대로였던 문제 - refresh()는 상세 모드에서만 의미가 있어서 생김.
   function handleFilterChange() {
+    if (typeof filterSummaryUpdaters !== "undefined") filterSummaryUpdaters.forEach(function (fn) { fn(); });
     if (detailModeActive) {
       refresh();
     } else {
@@ -607,12 +679,69 @@ kakao.maps.load(function () {
     }
   }
 
-  // 지사를 하나라도 선택했을 때만 직영구분 필터를 보여준다(선택 안 했을 땐 숨겨서
-  // 평소 화면 공간을 차지하지 않게 함).
-  function updateMgmtTypeVisibility() {
-    var anyTeam = TEAM_GROUPS.some(function (t) { return activeTeam[t]; });
-    var group = document.getElementById("mgmttype-filter-group");
-    if (group) group.style.display = anyTeam ? "" : "none";
+  // 담당/팀/구분/파트너사 칩 줄을 현재 선택 상태에 맞게 다시 그린다.
+  function buildOrgChips(containerId, options, activeMap, onToggle) {
+    var container = document.getElementById(containerId);
+    container.innerHTML = "";
+    if (options.length === 0) return;
+    function mkChip(label, checked, onChange, title, sub) {
+      var el = document.createElement("label");
+      el.className = "chip" + (checked ? " active" : "");
+      if (title) el.title = title;
+      var input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = checked;
+      input.addEventListener("change", function () { onChange(input.checked); });
+      el.appendChild(input);
+      el.appendChild(document.createTextNode(label));
+      if (sub) {
+        var span = document.createElement("span");
+        span.className = "chip-sub";
+        span.textContent = sub;
+        el.appendChild(span);
+      }
+      container.appendChild(el);
+    }
+    var allOn = options.every(function (o) { return activeMap[o.key]; });
+    mkChip("전체", allOn, function (on) {
+      options.forEach(function (o) { activeMap[o.key] = on; });
+      onToggle();
+    });
+    options.forEach(function (o) {
+      mkChip(o.label, !!activeMap[o.key], function (on) {
+        activeMap[o.key] = on;
+        onToggle();
+      }, o.title, o.sub);
+    });
+  }
+
+  function renderOrgFilters() {
+    recomputeOrgState();
+    function onToggle() {
+      renderOrgFilters();
+      handleFilterChange();
+    }
+    buildOrgChips("dam-filters",
+      DAM_GROUPS.map(function (d) { return { key: d, label: displayDamName(d) }; }),
+      activeDam, onToggle);
+
+    var teamOpts = visibleTeamOptions().map(function (t) { return { key: t, label: displayTeamName(t) }; });
+    buildOrgChips("team-filters", teamOpts, activeTeam, onToggle);
+    document.getElementById("team-filter-group").style.display = teamOpts.length ? "" : "none";
+
+    var typeOpts = visibleTypeOptions().map(function (t) { return { key: t, label: displayMgmtType(t) }; });
+    buildOrgChips("mgmttype-filters", typeOpts, activeMgmtType, onToggle);
+    document.getElementById("mgmttype-filter-group").style.display = typeOpts.length ? "" : "none";
+
+    var partnerNodes = visiblePartnerNodes();
+    var multiTeam = selectedOf(activeTeam).length > 1;
+    var partnerOpts = partnerNodes.map(function (i) {
+      var n = ORG_NODES[i];
+      return { key: String(i), label: n[3], title: displayTeamName(n[1]) + " > " + displayMgmtType(n[2]) + " > " + n[3],
+               sub: multiTeam ? " (" + shortTeamName(n[1]) + ")" : "" };
+    });
+    buildOrgChips("partner-filters", partnerOpts, activePartner, onToggle);
+    document.getElementById("partner-filter-group").style.display = partnerOpts.length ? "" : "none";
   }
 
   document.getElementById("old-only-checkbox").addEventListener("change", function () {
@@ -680,6 +809,38 @@ kakao.maps.load(function () {
   }
   buildFilterChips("manufacturer-filters", activeManufacturer, COMPANY_GROUPS);
   buildFilterChips("mntcompany-filters", activeMntCompany, COMPANY_GROUPS);
+
+  // 필터 그룹 접기/펼치기. 접어도 선택한 필터는 그대로 적용되고, 접힌 상태에서는
+  // 제목 옆에 현재 선택 요약("▸ 오티스 외 1")을 보여준다. 접힘 상태는 브라우저에 기억.
+  var FILTER_COLLAPSE_KEY = "filterGroupCollapsed";
+  var filterCollapseState = {};
+  try { filterCollapseState = JSON.parse(localStorage.getItem(FILTER_COLLAPSE_KEY) || "{}") || {}; } catch (e) {}
+  var filterSummaryUpdaters = [];
+  function setupCollapsibleFilterGroup(prefix, chipRowId, activeMap, groups) {
+    var row = document.getElementById(chipRowId);
+    var arrow = document.getElementById(prefix + "-arrow");
+    var summary = document.getElementById(prefix + "-summary");
+    function update() {
+      var collapsed = !!filterCollapseState[prefix];
+      row.classList.toggle("collapsed", collapsed);
+      arrow.textContent = collapsed ? "▸" : "▾";
+      var selected = groups.filter(function (g) { return activeMap[g]; });
+      if (collapsed && selected.length) {
+        summary.textContent = " · " + selected[0] + (selected.length > 1 ? " 외 " + (selected.length - 1) : "");
+      } else {
+        summary.textContent = "";
+      }
+    }
+    document.getElementById(prefix + "-toggle").addEventListener("click", function () {
+      filterCollapseState[prefix] = !filterCollapseState[prefix];
+      try { localStorage.setItem(FILTER_COLLAPSE_KEY, JSON.stringify(filterCollapseState)); } catch (e) {}
+      update();
+    });
+    filterSummaryUpdaters.push(update);
+    update();
+  }
+  setupCollapsibleFilterGroup("manufacturer", "manufacturer-filters", activeManufacturer, COMPANY_GROUPS);
+  setupCollapsibleFilterGroup("mntcompany", "mntcompany-filters", activeMntCompany, COMPANY_GROUPS);
   renderLegend();
 
   // 업체 그룹 분류(문자열 검색 여러 번)를 매번 다시 하지 않도록, 지역 데이터가
@@ -727,8 +888,7 @@ kakao.maps.load(function () {
     return items.filter(function (item) {
       return facetPasses(activeManufacturer, COMPANY_GROUPS, item._mfgGroup) &&
              facetPasses(activeMntCompany, COMPANY_GROUPS, item._mntGroup) &&
-             facetPasses(activeTeam, TEAM_GROUPS, item.team) &&
-             facetPasses(activeMgmtType, MGMT_TYPE_GROUPS, item.mgmtType) &&
+             orgPasses(item) &&
              (!activeOldOnly || isOldElevator(item)) &&
              // 업체 영역 보기에서 업체를 선택했으면 "지금 패널에 뜬 구" + "그 업체"
              // 둘 다 만족하는 것만 화면에 남긴다 - 서초구를 보면서 오티스를 고르면
@@ -835,8 +995,7 @@ kakao.maps.load(function () {
       "설치일: " + (item.installDate || "-") + "<br/>" +
       "승강기번호: " + item.id +
       (item.projectNo ? "<br/>PJT번호: " + item.projectNo : "") +
-      (item.team ? "<br/>지사명: " + displayTeamName(item.team) : "") +
-      (item.mgmtType ? "<br/>직영구분: " + displayMgmtType(item.mgmtType) : "") +
+      orgPopupLines(item) +
       "<br/><span class=\"roadview-btn\" id=\"roadview-open-btn\">로드뷰 보기</span> " +
       "<span class=\"roadview-btn\" id=\"directions-btn\">길찾기</span> " +
       "<span class=\"roadview-btn\" id=\"detail-info-btn\">상세정보</span>";
@@ -1155,12 +1314,24 @@ kakao.maps.load(function () {
     updateDashboard(visible);
   }
 
+  function orgOf(item) {
+    return (item.pt !== null && item.pt !== undefined) ? ORG_NODES[item.pt] : null;
+  }
+  function orgPopupLines(item) {
+    var n = orgOf(item);
+    if (!n) return "";
+    return "<br/>담당: " + displayDamName(n[0]) +
+           "<br/>팀: " + displayTeamName(n[1]) +
+           "<br/>구분: " + displayMgmtType(n[2]) +
+           (n[3] ? "<br/>파트너사: " + n[3] : "");
+  }
+
   function exportVisibleToXlsx() {
     if (lastVisibleData.length === 0) {
       alert("다운로드할 데이터가 없습니다. 지도를 확대해서 승강기가 표시된 상태에서 다시 시도해주세요.");
       return;
     }
-    var headers = ["건물명", "주소", "제조업체", "유지보수업체", "대수", "기종", "상태", "종류", "최초설치일", "설치일", "승강기번호", "PJT번호", "지사명", "직영구분"];
+    var headers = ["건물명", "주소", "제조업체", "유지보수업체", "대수", "기종", "상태", "종류", "최초설치일", "설치일", "승강기번호", "PJT번호", "담당", "팀", "구분", "파트너사"];
     var rows = lastVisibleData.map(function (item) {
       return {
         "건물명": item.name, "주소": item.address,
@@ -1169,8 +1340,10 @@ kakao.maps.load(function () {
         "상태": item.status, "종류": item.kind,
         "최초설치일": item.firstInstallDate, "설치일": item.installDate,
         "승강기번호": item.id, "PJT번호": item.projectNo,
-        "지사명": item.team ? displayTeamName(item.team) : "",
-        "직영구분": item.mgmtType ? displayMgmtType(item.mgmtType) : "",
+        "담당": orgOf(item) ? displayDamName(orgOf(item)[0]) : "",
+        "팀": item.team ? displayTeamName(item.team) : "",
+        "구분": item.mgmtType ? displayMgmtType(item.mgmtType) : "",
+        "파트너사": orgOf(item) ? (orgOf(item)[3] || "") : "",
       };
     });
     var sheet = XLSX.utils.json_to_sheet(rows, { header: headers });
@@ -1530,23 +1703,13 @@ kakao.maps.load(function () {
     if (activeOldOnly && info.count > 0) {
       ratio *= (info.oldCount || 0) / info.count;
     }
-    var teamAnyChecked = TEAM_GROUPS.some(function (t) { return activeTeam[t]; });
-    if (teamAnyChecked && info.count > 0) {
-      var teamCounts = info.teamCounts || {};
-      var teamMatch = 0;
-      TEAM_GROUPS.forEach(function (t) {
-        if (activeTeam[t]) teamMatch += teamCounts[t] || 0;
+    if (anyDamSelected && info.count > 0) {
+      var ptCounts = info.ptCounts || {};
+      var orgMatch = 0;
+      Object.keys(ptCounts).forEach(function (i) {
+        if (orgNodePasses[i]) orgMatch += ptCounts[i];
       });
-      ratio *= teamMatch / info.count;
-    }
-    var mgmtTypeAnyChecked = MGMT_TYPE_GROUPS.some(function (t) { return activeMgmtType[t]; });
-    if (mgmtTypeAnyChecked && info.count > 0) {
-      var mgmtTypeCounts = info.mgmtTypeCounts || {};
-      var mgmtTypeMatch = 0;
-      MGMT_TYPE_GROUPS.forEach(function (t) {
-        if (activeMgmtType[t]) mgmtTypeMatch += mgmtTypeCounts[t] || 0;
-      });
-      ratio *= mgmtTypeMatch / info.count;
+      ratio *= orgMatch / info.count;
     }
     return ratio;
   }
@@ -1697,34 +1860,18 @@ kakao.maps.load(function () {
     }
   }
 
-  loadData("./data/regions_manifest.json")
-    .then(function (manifest) {
+  Promise.all([loadData("./data/regions_manifest.json"), loadData("./data/org_hierarchy.json")])
+    .then(function (loaded) {
+      var manifest = loaded[0];
+      ORG_NODES = loaded[1].nodes || [];
       regionsManifest = manifest;
 
-      // 팀(지사) 목록은 고정값이 아니라 데이터에서 나온 것이므로, manifest의
-      // teamCounts를 전부 합쳐서 실제 존재하는 지사 목록을 뽑아 필터 칩을 만든다.
-      var teamSet = {};
-      var mgmtTypeSet = {};
-      Object.keys(regionsManifest).forEach(function (region) {
-        var tc = regionsManifest[region].teamCounts || {};
-        Object.keys(tc).forEach(function (t) { teamSet[t] = true; });
-        var mc = regionsManifest[region].mgmtTypeCounts || {};
-        Object.keys(mc).forEach(function (t) { mgmtTypeSet[t] = true; });
+      // 담당 목록은 계층 표에 실제로 있는 값만(표 순서 그대로) 칩으로 만든다.
+      var damSeen = {};
+      ORG_NODES.forEach(function (n) {
+        if (!damSeen[n[0]]) { damSeen[n[0]] = true; DAM_GROUPS.push(n[0]); }
       });
-      TEAM_GROUPS = TEAM_ORDER.filter(function (t) { return teamSet[t]; });
-      Object.keys(teamSet).forEach(function (t) {
-        if (TEAM_GROUPS.indexOf(t) === -1) TEAM_GROUPS.push(t); // 목록에 없는 새 지사는 뒤에 추가
-      });
-      TEAM_GROUPS.forEach(function (t) { activeTeam[t] = false; });
-
-      // 팀(TEAM_GROUPS)과 달리 목록에 없는 값(자회사)을 자동으로 뒤에 붙이지 않는다 -
-      // 자회사는 의도적으로 필터에서 뺀 값이라, 새로 나타나도 그대로 숨겨야 함.
-      MGMT_TYPE_GROUPS = MGMT_TYPE_ORDER.filter(function (t) { return mgmtTypeSet[t]; });
-      MGMT_TYPE_GROUPS.forEach(function (t) { activeMgmtType[t] = false; });
-
-      buildFilterChips("mgmttype-filters", activeMgmtType, MGMT_TYPE_GROUPS, displayMgmtType);
-      buildFilterChips("team-filters", activeTeam, TEAM_GROUPS, displayTeamName, updateMgmtTypeVisibility);
-      updateMgmtTypeVisibility();
+      renderOrgFilters();
 
       handleViewChange();
       kakao.maps.event.addListener(map, "idle", handleViewChange);

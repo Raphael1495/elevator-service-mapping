@@ -23,11 +23,15 @@ import pyxlsb
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_FILE = os.path.join(BASE_DIR, "pipeline", "cache", "geocode_cache.json")
-ADDRESS_SOURCE = os.path.join(BASE_DIR, "국가DB_SID_주소.xlsx")
-DB_SOURCE = os.path.join(BASE_DIR, "국가DB_260805.xlsb")
-DB_SHEET = "aa"
-MGMT_SOURCE = os.path.join(BASE_DIR, "2026.07월 관리대수(원본).xlsb")
-MGMT_SHEET = "download"
+# 기존(직전 DB 시점) 승강기의 주소 - 행정구역 개편(전남광주통합특별시, 인천 검단구/서해구 등)
+# 으로 새 DB의 주소 표기가 바뀌었어도 기존 승강기는 이 주소와 좌표를 그대로 쓴다.
+ADDRESS_SOURCE = os.path.join(BASE_DIR, "국가DB_SID_주소_260805.xlsx")
+# 메인 데이터는 국가DB_261105.xlsb. 시트명이 바뀌어도(aa -> 승강기정보센터DB) 동작하도록 첫 시트를 쓴다.
+DB_SOURCE = os.path.join(BASE_DIR, "국가DB_261105.xlsb")
+DB_SHEET = 1
+MGMT_SOURCE = os.path.join(BASE_DIR, "2026.10월 관리대수(원본).xlsb")
+MGMT_SHEET = "리스트"
+ORG_FILE = os.path.join(BASE_DIR, "data", "org_hierarchy.json")
 REGIONS_DIR = os.path.join(BASE_DIR, "data", "regions")
 MANIFEST_FILE = os.path.join(BASE_DIR, "data", "regions_manifest.json")
 SEARCH_INDEX_FILE = os.path.join(BASE_DIR, "data", "search_index.json")
@@ -52,6 +56,7 @@ DETAIL_PILOT_REGIONS = None
 
 NEEDED_COLUMNS = [
     "ELEVATORNO",
+    "ADDRESS1",
     "BULDNM",
     "MANUFACTURERNAME",
     "MNTCPNYNM",
@@ -145,6 +150,22 @@ SIGUNGU_ALIASES = {
 }
 
 
+# 신규 승강기의 새 행정구역 표기 -> 기존(개편 전) 표기. 기존 승강기는 기존 주소를 그대로
+# 쓰므로, 한 건물의 기존/신규 승강기가 서로 다른 지역·현장으로 갈라지지 않게 맞춘다.
+GWANGJU_GU = {"동구", "서구", "남구", "북구", "광산구"}
+INCHEON_GU_TO_LEGACY = {"검단구": "서구", "서해구": "서구", "영종구": "중구", "제물포구": "중구"}
+
+
+def to_legacy_address(address):
+    tokens = address.split(" ")
+    if len(tokens) > 1:
+        if tokens[0] == "전남광주통합특별시":
+            tokens[0] = "광주광역시" if tokens[1] in GWANGJU_GU else "전라남도"
+        elif SIDO_ALIASES.get(tokens[0], tokens[0]) == "인천광역시" and tokens[1] in INCHEON_GU_TO_LEGACY:
+            tokens[1] = INCHEON_GU_TO_LEGACY[tokens[1]]
+    return " ".join(tokens)
+
+
 def region_of(address):
     """주소의 '시/도 + 시/군/구' 두 토큰을 지역 구분 키로 사용 (시/도 하나로만 나누면
     경기도처럼 인구 밀집 지역이 혼자 거대 파일이 되어버리는 문제를 피하기 위함)."""
@@ -235,37 +256,118 @@ def _find_column(header, candidates):
     return None
 
 
+# 담당구분(DK) -> 화면 표시용 짧은 이름. 목록 순서가 곧 화면 표시 순서다.
+DAM_MAP = {
+    "서비스강북담당": "강북", "서비스강남담당": "강남", "서비스동부담당": "동부",
+    "서비스서부담당": "서부", "ES담당": "ES", "자회사": "자회사",
+}
+DAM_ORDER = ["강북", "강남", "동부", "서부", "ES", "자회사"]
+# 팀(지사/센터) 표시 순서 - 목록에 없으면 이름순으로 뒤에 붙는다.
+TEAM_ORDER = [
+    "강북지사(서비스)", "강서지사(서비스)", "인천지사(서비스)",
+    "강남지사(서비스)", "분당지사(서비스)", "수원지사(서비스)", "강원지사(서비스)",
+    "대구지사(서비스)", "부산지사(서비스)", "울산지사(서비스)", "경남지사(서비스)",
+    "대전지사(서비스)", "충청지사(서비스)", "광주지사(서비스)", "전주지사(서비스)", "제주지사(서비스)",
+    "ES서비스팀",
+]
+TYPE_ORDER = ["직영", "협력사", "자회사"]
+
+# 10월 관리대수 원본(리스트 시트)에서 반드시 있어야 하는 컬럼. 컬럼 위치가 아니라 헤더 이름으로
+# 찾고, 사용자가 안내한 엑셀 열 위치(X=팀, AA=직영/협력사, DI=SID, DK=담당구분)와 다르면 경고한다.
+MGMT_EXPECTED_LETTERS = {"팀": "X", "파트너사": "Z", "직영/협력사": "AA", "SID": "DI", "담당구분": "DK"}
+
+
+def _col_letter(i):
+    s = ""
+    i += 1
+    while i:
+        i, r = divmod(i - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
+def _clean(v):
+    return v.strip() if isinstance(v, str) and v.strip() else None
+
+
 def load_hyundai_management_map():
-    """현대엘리베이터 자체 관리대수(원본)에서 승강기번호 -> {프로젝트번호, 담당팀, 직영구분} 매핑.
-    승강기번호가 없는 행(약 34건)은 조인할 수 없으니 그냥 버린다."""
+    """현대엘리베이터 자체 관리대수(원본, 리스트 시트)에서
+    승강기번호(SID) -> {프로젝트번호, 담당(dam), 팀(team), 직영구분(mgmtType), 파트너사(partner)} 매핑.
+    SID가 공란/숫자 아님/0000000(자리표시값)인 행은 조인할 수 없으니 버린다.
+    같은 SID가 서로 다른 소속으로 여러 번 나오면 나중 행을 쓰고 목록을 출력한다."""
     if not os.path.exists(MGMT_SOURCE):
         print(f"경고: {MGMT_SOURCE} 없음 - 프로젝트번호/담당팀 없이 진행")
         return {}
     result = {}
+    skipped = Counter()
+    conflicts = []
     with pyxlsb.open_workbook(MGMT_SOURCE) as wb:
         with wb.get_sheet(MGMT_SHEET) as sheet:
             rows = sheet.rows()
             header = [c.v for c in next(rows)]
-            idx_eno = header.index("승강기번호")
-            idx_pjt = header.index("원PJT")
-            idx_team = header.index("팀")
-            idx_mgmt_type = _find_column(header, MGMT_TYPE_COLUMN_CANDIDATES)
-            if idx_mgmt_type is None:
-                print("경고: 관리대수 원본에서 직영/협력사 구분 컬럼을 못 찾음 - 직영구분 없이 진행")
+            idx = {name: header.index(name) for name in
+                   ("원PJT", "팀", "파트너사", "직영/협력사", "SID", "담당구분")}
+            for name, letter in MGMT_EXPECTED_LETTERS.items():
+                actual = _col_letter(idx[name])
+                if actual != letter:
+                    print(f"경고: 관리대수 원본의 '{name}' 컬럼이 {letter}가 아니라 {actual} 열에 있음 - 헤더 이름 기준으로 계속 진행")
             for row in rows:
                 vals = [c.v for c in row]
-                eno = normalize_key(vals[idx_eno])
-                if not eno:
+                vals += [None] * (len(header) - len(vals))
+                raw_sid = vals[idx["SID"]]
+                sid = str(raw_sid).strip() if raw_sid is not None else ""
+                if not sid.isdigit():
+                    skipped["SID 공란/숫자아님"] += 1
                     continue
-                pjt = vals[idx_pjt]
-                team = vals[idx_team]
-                mgmt_type = vals[idx_mgmt_type] if idx_mgmt_type is not None else None
-                result[eno] = {
+                eno = normalize_key(sid)
+                if int(eno) == 0:
+                    skipped["SID 0000000"] += 1
+                    continue
+                dam = DAM_MAP.get(_clean(vals[idx["담당구분"]]))
+                team = _clean(vals[idx["팀"]])
+                mgmt_type = _clean(vals[idx["직영/협력사"]])
+                if not (dam and team and mgmt_type):
+                    skipped["담당/팀/구분 누락"] += 1
+                    continue
+                pjt = vals[idx["원PJT"]]
+                entry = {
                     "projectNo": normalize_key(pjt) if pjt is not None else None,
-                    "team": team.strip() if isinstance(team, str) and team.strip() else None,
-                    "mgmtType": mgmt_type.strip() if isinstance(mgmt_type, str) and mgmt_type.strip() else None,
+                    "dam": dam,
+                    "team": team,
+                    "mgmtType": mgmt_type,
+                    "partner": _clean(vals[idx["파트너사"]]),
                 }
+                prev = result.get(eno)
+                if prev and (prev["dam"], prev["team"], prev["mgmtType"], prev["partner"]) != (
+                        entry["dam"], entry["team"], entry["mgmtType"], entry["partner"]):
+                    conflicts.append((eno, prev["team"], prev["partner"], entry["team"], entry["partner"]))
+                result[eno] = entry
+    if skipped:
+        print("관리대수 원본에서 제외한 행: " + ", ".join(f"{k} {v}건" for k, v in skipped.items()))
+    if conflicts:
+        print(f"같은 SID가 다른 소속으로 중복된 건 {len(conflicts)}건(나중 행 사용):")
+        for c in conflicts:
+            print(f"  {c[0]}: {c[1]}/{c[2]} -> {c[3]}/{c[4]}")
     return result
+
+
+def build_org_hierarchy(records):
+    """records의 _org(담당, 팀, 구분, 파트너사)에서 고유 노드 목록을 만들고 각 레코드에 pt(노드 번호)를
+    붙인다. 화면 필터(담당 > 팀 > 구분 > 파트너사)가 이 표를 기준으로 단계별 목록을 만든다."""
+    nodes = sorted(
+        {r["_org"] for r in records if r.get("_org")},
+        key=lambda n: (
+            DAM_ORDER.index(n[0]) if n[0] in DAM_ORDER else 99,
+            TEAM_ORDER.index(n[1]) if n[1] in TEAM_ORDER else 99, n[1],
+            TYPE_ORDER.index(n[2]) if n[2] in TYPE_ORDER else 99,
+            n[3] or "",
+        ),
+    )
+    index = {n: i for i, n in enumerate(nodes)}
+    for r in records:
+        org = r.pop("_org", None)
+        r["pt"] = index[org] if org else None
+    return [list(n) for n in nodes]
 
 
 def main():
@@ -292,21 +394,27 @@ def main():
                     break
                 vals = [c.v for c in row]
                 eno = normalize_key(vals[idx["ELEVATORNO"]])
+                new_addr = str(vals[idx["ADDRESS1"]]).strip() if vals[idx["ADDRESS1"]] is not None else ""
                 addr = addr_map.get(eno)
                 if not addr:
-                    skipped_no_addr += 1
-                    continue
+                    if not new_addr:
+                        skipped_no_addr += 1
+                        continue
+                    # 직전 DB에 없던 신규 승강기: 새 DB 주소를 기존 행정구역 표기로 바꿔서 쓴다.
+                    # 좌표는 새 표기 그대로 지오코딩해 둔 캐시에서 찾는다.
+                    addr = to_legacy_address(new_addr)
                 name = vals[idx["BULDNM"]]
-                raw_rows.append((eno, addr, name, vals))
+                raw_rows.append((eno, addr, name, vals, new_addr))
 
-    unit_counts = count_units_by_address_and_name((addr, name) for _, addr, name, _ in raw_rows)
+    unit_counts = count_units_by_address_and_name((addr, name) for _, addr, name, _, _ in raw_rows)
     print(f"고유 현장(주소+현장명) 종류: {len(unit_counts)}개")
 
     records = []
     detail_by_region = defaultdict(list)
     skipped_no_coord = 0
-    for eno, addr, name, vals in raw_rows:
-        coord = cache.get(addr)
+    for eno, addr, name, vals, new_addr in raw_rows:
+        # 기존 주소의 좌표가 없으면(예전 변환 실패) 새 DB 주소로 이미 받아 둔 좌표가 있는지 본다.
+        coord = cache.get(addr) or cache.get(new_addr)
         if not coord:
             skipped_no_coord += 1
             continue
@@ -330,6 +438,7 @@ def main():
                 "projectNo": pad_project_no(mgmt["projectNo"]) if mgmt else None,
                 "team": mgmt["team"] if mgmt else None,
                 "mgmtType": mgmt["mgmtType"] if mgmt else None,
+                "_org": (mgmt["dam"], mgmt["team"], mgmt["mgmtType"], mgmt["partner"]) if mgmt else None,
             }
         )
 
@@ -346,6 +455,11 @@ def main():
                     vals[idx["SHUTTLEFLOORCNT"]],
                 ]
             )
+
+    org_nodes = build_org_hierarchy(records)
+    with open(ORG_FILE, "w", encoding="utf-8") as f:
+        json.dump({"nodes": org_nodes}, f, ensure_ascii=False)
+    print(f"담당/팀/구분/파트너사 계층: 노드 {len(org_nodes)}개 -> {ORG_FILE}")
 
     by_region = defaultdict(list)
     for r in records:
@@ -368,6 +482,7 @@ def main():
         mnt_counts = Counter()
         team_counts = Counter()
         mgmt_type_counts = Counter()
+        pt_counts = Counter()
         for it in items:
             mfg = classify_company(it["manufacturer"])
             mnt = classify_company(it["mntCompany"])
@@ -377,6 +492,8 @@ def main():
                 team_counts[it["team"]] += 1
             if it["mgmtType"]:
                 mgmt_type_counts[it["mgmtType"]] += 1
+            if it["pt"] is not None:
+                pt_counts[str(it["pt"])] += 1
         manifest[region] = {
             "file": f"regions/{file_name}",
             "count": len(items),
@@ -389,6 +506,7 @@ def main():
             "crossCounts": {mfg: dict(mnt_map) for mfg, mnt_map in cross_counts.items()},
             "mgmtTypeCounts": dict(mgmt_type_counts),
             "teamCounts": dict(team_counts),
+            "ptCounts": dict(pt_counts),
         }
 
         if region in TERRITORY_PILOT_REGIONS:
