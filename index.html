@@ -727,7 +727,14 @@ kakao.maps.load(function () {
     });
   }
 
+  var lastPartnerSignature = "";
   function renderOrgFilters() {
+    // 칩을 누를 때마다 줄을 통째로 다시 그리므로, 스크롤 위치(패널 전체 + 파트너사 목록)를
+    // 먼저 저장했다가 복원한다. 파트너사 목록의 구성이 바뀐 경우(담당/팀/구분 변경)에는
+    // 이전 위치가 의미 없으니 맨 위부터 보여준다.
+    var panelEl = document.getElementById("search-panel");
+    var panelScroll = panelEl ? panelEl.scrollTop : 0;
+    var partnerScroll = document.getElementById("partner-filters").scrollTop;
     recomputeOrgState();
     function onToggle() {
       renderOrgFilters();
@@ -755,6 +762,13 @@ kakao.maps.load(function () {
     buildOrgChips("partner-filters", partnerOpts, activePartner, onToggle);
     document.getElementById("partner-filter-group").style.display = partnerOpts.length ? "" : "none";
     fitPartnerRow();
+
+    var signature = partnerOpts.map(function (o) { return o.key; }).join(",");
+    if (signature === lastPartnerSignature) {
+      document.getElementById("partner-filters").scrollTop = partnerScroll;
+    }
+    lastPartnerSignature = signature;
+    if (panelEl) panelEl.scrollTop = panelScroll;
   }
 
   // 파트너사 칩은 15개까지는 스크롤 없이 전부 보이게 하고, 그보다 많으면 15번째 칩이 끝나는
