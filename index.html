@@ -55,6 +55,7 @@
   .org-sub { margin-left: 8px; }
   .partner-row { overflow-y: auto; }  /* 높이는 15개 기준으로 JS가 계산(fitPartnerRow) - 15개 이하면 스크롤 없음 */
   .chip .chip-sub { font-size: 10px; opacity: 0.7; }
+  .chip .chip-count { font-size: 11px; font-weight: bold; margin-left: 2px; opacity: 0.85; }
   .other-toggle {
     display: flex; justify-content: space-between; align-items: center;
     margin-top: 14px; padding: 7px 8px; border: 1px dashed #bbb; border-radius: 6px;
@@ -696,7 +697,7 @@ kakao.maps.load(function () {
     var container = document.getElementById(containerId);
     container.innerHTML = "";
     if (options.length === 0) return;
-    function mkChip(label, checked, onChange, title, sub) {
+    function mkChip(label, checked, onChange, title, sub, count) {
       var el = document.createElement("label");
       el.className = "chip" + (checked ? " active" : "");
       if (title) el.title = title;
@@ -712,6 +713,12 @@ kakao.maps.load(function () {
         span.textContent = sub;
         el.appendChild(span);
       }
+      if (count !== undefined && count !== null) {
+        var cnt = document.createElement("span");
+        cnt.className = "chip-count";
+        cnt.textContent = Number(count).toLocaleString();
+        el.appendChild(cnt);
+      }
       container.appendChild(el);
     }
     var allOn = options.every(function (o) { return activeMap[o.key]; });
@@ -723,7 +730,7 @@ kakao.maps.load(function () {
       mkChip(o.label, !!activeMap[o.key], function (on) {
         activeMap[o.key] = on;
         onToggle();
-      }, o.title, o.sub);
+      }, o.title, o.sub, o.count);
     });
   }
 
@@ -757,7 +764,7 @@ kakao.maps.load(function () {
     var partnerOpts = partnerNodes.map(function (i) {
       var n = ORG_NODES[i];
       return { key: String(i), label: n[3], title: displayTeamName(n[1]) + " > " + displayMgmtType(n[2]) + " > " + n[3],
-               sub: multiTeam ? " (" + shortTeamName(n[1]) + ")" : "" };
+               sub: multiTeam ? " (" + shortTeamName(n[1]) + ")" : "", count: n[4] };
     });
     buildOrgChips("partner-filters", partnerOpts, activePartner, onToggle);
     document.getElementById("partner-filter-group").style.display = partnerOpts.length ? "" : "none";

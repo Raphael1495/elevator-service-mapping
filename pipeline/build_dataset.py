@@ -290,6 +290,11 @@ def _clean(v):
     return v.strip() if isinstance(v, str) and v.strip() else None
 
 
+# 관리대수 원본의 소속(담당, 팀, 구분, 파트너사)별 총 행 수. SID가 비었거나 0000000이라 지도에
+# 못 올리는 행도 포함한 "총 관리대수"다(필터의 파트너사 옆 숫자). load_hyundai_management_map()이 채운다.
+MGMT_ORG_TOTALS = Counter()
+
+
 def load_hyundai_management_map():
     """현대엘리베이터 자체 관리대수(원본, 리스트 시트)에서
     승강기번호(SID) -> {프로젝트번호, 담당(dam), 팀(team), 직영구분(mgmtType), 파트너사(partner)} 매핑.
@@ -301,6 +306,7 @@ def load_hyundai_management_map():
     result = {}
     skipped = Counter()
     conflicts = []
+    MGMT_ORG_TOTALS.clear()
     with pyxlsb.open_workbook(MGMT_SOURCE) as wb:
         with wb.get_sheet(MGMT_SHEET) as sheet:
             rows = sheet.rows()
@@ -314,6 +320,12 @@ def load_hyundai_management_map():
             for row in rows:
                 vals = [c.v for c in row]
                 vals += [None] * (len(header) - len(vals))
+                org_key = (
+                    DAM_MAP.get(_clean(vals[idx["담당구분"]])), _clean(vals[idx["팀"]]),
+                    _clean(vals[idx["직영/협력사"]]), _clean(vals[idx["파트너사"]]),
+                )
+                if org_key[0] and org_key[1] and org_key[2]:
+                    MGMT_ORG_TOTALS[org_key] += 1
                 raw_sid = vals[idx["SID"]]
                 sid = str(raw_sid).strip() if raw_sid is not None else ""
                 if not sid.isdigit():
@@ -367,7 +379,8 @@ def build_org_hierarchy(records):
     for r in records:
         org = r.pop("_org", None)
         r["pt"] = index[org] if org else None
-    return [list(n) for n in nodes]
+    # 노드 = [담당, 팀, 구분, 파트너사, 총 관리대수(관리대수 원본 기준)]
+    return [list(n) + [MGMT_ORG_TOTALS.get(n, 0)] for n in nodes]
 
 
 def main():
