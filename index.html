@@ -644,10 +644,12 @@ kakao.maps.load(function () {
     var damHasTeam = {};
     ORG_NODES.forEach(function (n) { if (activeDam[n[0]] && activeTeam[n[1]]) damHasTeam[n[0]] = true; });
     var anyType = selectedOf(activeMgmtType).length > 0;
-    var partnerGroupHas = {};
+    // 파트너사를 하나라도 고른 구분(직영/협력/자회사)은 그 구분 안에서 고른 파트너사만 통과시킨다
+    // (팀이 달라도 마찬가지 - 대전 동부직영만 골랐으면 충청지사 직영도 빠져야 함). 파트너사를
+    // 하나도 안 고른 구분은 팀 선택에 맞는 건 전부 통과.
+    var partnerTypeHas = {};
     selectedOf(activePartner).forEach(function (i) {
-      var n = ORG_NODES[i];
-      partnerGroupHas[n[1] + "|" + n[2]] = true;
+      partnerTypeHas[ORG_NODES[i][2]] = true;
     });
     orgNodePasses = ORG_NODES.map(function (n, i) {
       if (!anyDamSelected) return true;
@@ -655,7 +657,7 @@ kakao.maps.load(function () {
       if (!damHasTeam[n[0]]) return true;          // 담당만 골랐으면 그 담당 전체
       if (!activeTeam[n[1]]) return false;
       if (n[2] !== "자회사" && anyType && !activeMgmtType[n[2]]) return false;
-      if (partnerGroupHas[n[1] + "|" + n[2]] && !activePartner[i]) return false;
+      if (partnerTypeHas[n[2]] && !activePartner[i]) return false;
       return true;
     });
   }
