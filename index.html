@@ -54,8 +54,11 @@
   .chip.active { background: #333; color: #fff; border-color: #333; }
   .org-sub { margin-left: 8px; }
   .partner-row { overflow-y: auto; }  /* 높이는 15개 기준으로 JS가 계산(fitPartnerRow) - 15개 이하면 스크롤 없음 */
+  .chip { flex-wrap: wrap; max-width: 100%; }
+  .chip .chip-name { min-width: 0; overflow-wrap: anywhere; }
+  .chip .chip-meta { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
   .chip .chip-sub { font-size: 10px; opacity: 0.7; }
-  .chip .chip-count { font-size: 11px; font-weight: bold; margin-left: 2px; opacity: 0.85; }
+  .chip .chip-count { font-size: 11px; font-weight: bold; opacity: 0.85; }
   .other-toggle {
     display: flex; justify-content: space-between; align-items: center;
     margin-top: 14px; padding: 7px 8px; border: 1px dashed #bbb; border-radius: 6px;
@@ -706,19 +709,27 @@ kakao.maps.load(function () {
       input.checked = checked;
       input.addEventListener("change", function () { onChange(input.checked); });
       el.appendChild(input);
-      el.appendChild(document.createTextNode(label));
+      // 이름과 (팀)·대수를 따로 묶어서, 한 줄에 다 안 들어가면 (팀)·대수가 이름 아래 줄로 내려가게 한다.
+      var nameEl = document.createElement("span");
+      nameEl.className = "chip-name";
+      nameEl.textContent = label;
+      el.appendChild(nameEl);
+      var meta = document.createElement("span");
+      meta.className = "chip-meta";
+      el.appendChild(meta);
       if (sub) {
         var span = document.createElement("span");
         span.className = "chip-sub";
-        span.textContent = sub;
-        el.appendChild(span);
+        span.textContent = sub.trim();
+        meta.appendChild(span);
       }
       if (count !== undefined && count !== null) {
         var cnt = document.createElement("span");
         cnt.className = "chip-count";
-        cnt.textContent = Number(count).toLocaleString();
-        el.appendChild(cnt);
+        cnt.textContent = Number(count).toLocaleString() + "대";
+        meta.appendChild(cnt);
       }
+      if (!meta.childNodes.length) el.removeChild(meta);
       container.appendChild(el);
     }
     var allOn = options.every(function (o) { return activeMap[o.key]; });
