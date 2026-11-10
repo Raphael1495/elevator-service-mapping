@@ -53,8 +53,15 @@
   }
   .chip.active { background: #333; color: #fff; border-color: #333; }
   .org-sub { margin-left: 8px; }
-  .partner-row { max-height: 150px; overflow-y: auto; }
+  .partner-row { overflow-y: auto; }  /* 높이는 15개 기준으로 JS가 계산(fitPartnerRow) - 15개 이하면 스크롤 없음 */
   .chip .chip-sub { font-size: 10px; opacity: 0.7; }
+  .other-toggle {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: 14px; padding: 7px 8px; border: 1px dashed #bbb; border-radius: 6px;
+    font-size: 12px; color: #555; cursor: pointer; user-select: none;
+  }
+  .other-toggle .arrow { font-size: 16px; line-height: 1; }
+  #other-sections.collapsed { display: none; }
   .chip input { display: none; }
 
   #dashboard { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
@@ -199,14 +206,6 @@
       <span class="roadview-btn" id="export-csv-btn">현재 화면 목록 엑셀 다운로드</span>
 
       <div class="filter-group">
-        <h4 class="fg-toggle" id="manufacturer-toggle"><span>제조업체 표시<span class="fg-summary" id="manufacturer-summary"></span></span><span class="arrow" id="manufacturer-arrow">▾</span></h4>
-        <div class="chip-row" id="manufacturer-filters"></div>
-      </div>
-      <div class="filter-group">
-        <h4 class="fg-toggle" id="mntcompany-toggle"><span>유지보수업체 표시<span class="fg-summary" id="mntcompany-summary"></span></span><span class="arrow" id="mntcompany-arrow">▾</span></h4>
-        <div class="chip-row" id="mntcompany-filters"></div>
-      </div>
-      <div class="filter-group">
         <h4>현대지사 · 담당</h4>
         <div class="chip-row" id="dam-filters"></div>
       </div>
@@ -221,6 +220,16 @@
       <div class="filter-group org-sub" id="partner-filter-group" style="display:none;">
         <h4>└ 파트너사</h4>
         <div class="chip-row partner-row" id="partner-filters"></div>
+      </div>
+      <div id="other-toggle" class="other-toggle"><span>다른 필터·현황 보기<span class="fg-summary" id="other-summary"></span></span><span class="arrow" id="other-arrow">▸</span></div>
+      <div id="other-sections" class="collapsed">
+      <div class="filter-group">
+        <h4 class="fg-toggle" id="manufacturer-toggle"><span>제조업체 표시<span class="fg-summary" id="manufacturer-summary"></span></span><span class="arrow" id="manufacturer-arrow">▾</span></h4>
+        <div class="chip-row" id="manufacturer-filters"></div>
+      </div>
+      <div class="filter-group">
+        <h4 class="fg-toggle" id="mntcompany-toggle"><span>유지보수업체 표시<span class="fg-summary" id="mntcompany-summary"></span></span><span class="arrow" id="mntcompany-arrow">▾</span></h4>
+        <div class="chip-row" id="mntcompany-filters"></div>
       </div>
       <div class="filter-group">
         <h4>노후 승강기</h4>
@@ -261,6 +270,7 @@
             <ol id="ranking-competitor"></ol>
           </div>
         </div>
+      </div>
       </div>
     </div>
   </div>
@@ -742,7 +752,23 @@ kakao.maps.load(function () {
     });
     buildOrgChips("partner-filters", partnerOpts, activePartner, onToggle);
     document.getElementById("partner-filter-group").style.display = partnerOpts.length ? "" : "none";
+    fitPartnerRow();
   }
+
+  // 파트너사 칩은 15개까지는 스크롤 없이 전부 보이게 하고, 그보다 많으면 15번째 칩이 끝나는
+  // 높이까지만 보여준 뒤 나머지는 스크롤로 본다(칩 폭이 제각각이라 줄 수가 아니라 실제 위치로 계산).
+  var PARTNER_VISIBLE_MAX = 15;
+  function fitPartnerRow() {
+    var row = document.getElementById("partner-filters");
+    row.style.maxHeight = "none";
+    var chips = row.children;                       // [전체, 파트너사1, 파트너사2, ...]
+    if (chips.length - 1 <= PARTNER_VISIBLE_MAX) return;
+    var last = chips[PARTNER_VISIBLE_MAX];         // 전체 칩 다음부터 15번째 파트너사
+    var base = row.getBoundingClientRect().top;
+    var bottom = last.getBoundingClientRect().bottom - base;
+    if (bottom > 0) row.style.maxHeight = Math.ceil(bottom) + 2 + "px";
+  }
+  window.addEventListener("resize", fitPartnerRow);
 
   document.getElementById("old-only-checkbox").addEventListener("change", function () {
     activeOldOnly = this.checked;
@@ -841,6 +867,27 @@ kakao.maps.load(function () {
   }
   setupCollapsibleFilterGroup("manufacturer", "manufacturer-filters", activeManufacturer, COMPANY_GROUPS);
   setupCollapsibleFilterGroup("mntcompany", "mntcompany-filters", activeMntCompany, COMPANY_GROUPS);
+
+  // 현대지사(담당/팀/구분/파트너사)를 뺀 나머지 필터·현황을 한 번에 숨기는 토글. 기본은 숨김.
+  // 숨겨도 그 안의 필터는 계속 적용되므로, 접힌 제목에 "적용 중 N개"를 표시해 알아볼 수 있게 한다.
+  var otherCollapsed = true;
+  function updateOtherToggle() {
+    document.getElementById("other-sections").classList.toggle("collapsed", otherCollapsed);
+    document.getElementById("other-arrow").textContent = otherCollapsed ? "▸" : "▾";
+    var applied = 0;
+    if (COMPANY_GROUPS.some(function (g) { return activeManufacturer[g]; })) applied++;
+    if (COMPANY_GROUPS.some(function (g) { return activeMntCompany[g]; })) applied++;
+    if (activeOldOnly) applied++;
+    document.getElementById("other-summary").textContent =
+      otherCollapsed && applied ? " · 적용 중 " + applied + "개" : "";
+  }
+  document.getElementById("other-toggle").addEventListener("click", function () {
+    otherCollapsed = !otherCollapsed;
+    updateOtherToggle();
+    fitPartnerRow();
+  });
+  filterSummaryUpdaters.push(updateOtherToggle);
+  updateOtherToggle();
   renderLegend();
 
   // 업체 그룹 분류(문자열 검색 여러 번)를 매번 다시 하지 않도록, 지역 데이터가
